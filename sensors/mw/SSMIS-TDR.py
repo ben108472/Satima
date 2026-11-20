@@ -1,11 +1,11 @@
 """DMSP SSMIS TDR 天線溫度 (NOAA CLASS 的 NPR.TDRN.*，大端二進位)
 
-!! 這支讀取器沒有樣本檔可以驗證：格式照舊版 Satima-SSMIS 的 SSMIS_TDR.py 移植 (該程式只讀過 91 GHz)。
-!! 檔案大小與預期的記錄長度不符時會直接報錯而不會畫出錯的圖；其餘頻道的欄位位置請以實際檔案確認。
+格式最早照舊版 Satima-SSMIS 的 SSMIS_TDR.py 移植；2026/11 以 F16 2009/10/18 的實際檔案 (與同軌道的 SDR 對照) 驗證，
+修正了掃描時間的位置與檔尾補齊。檔案大小與預期的記錄長度不符時會直接報錯而不會畫出錯的圖。
 
 檔名  NPR.TDRN.S<A-D>.D<yyddd>.S<hhmm>.E<hhmm>.B<軌道>.<站>   SA / SB / SC / SD = F16 / F17 / F18 / F19
-結構  檔頭 40 bytes (第 18 byte 起的 int16 為掃描數)，之後每條掃描 9592 bytes：
-        掃描檔頭 36 bytes (年 u4、日序 u2、時、分、掃描時間 u4 (當日毫秒)…)
+結構  檔頭 40 bytes (第 18 byte 起的 int16 為掃描數)，之後每條掃描 9592 bytes，檔尾補 0 到 512 的倍數：
+        掃描檔頭 36 bytes (年 u4、日序 u2、時、分、掃描序號 u4 (自 1 起)、掃描時間 u4 (當日毫秒)…)
         星曆 20 bytes x 3
         影像場景 24 bytes x 180：ch8~11 的緯度、經度、場景號、地表、降雨、ch8、ch9、ch10、ch11、
                                  ch17/18 的緯度、經度、ch17、ch18
@@ -27,7 +27,8 @@ from satima.mw.reader import Channel, Geo, Scene, SwathReader, band_name, clean_
 
 _NAME = re.compile(r'^NPR\.TDRN\.S([A-D])\.D(\d{5})\.S(\d{4})\.E(\d{4})\.B(\d+)', re.I)
 _SATELLITES = {'A': 'F16', 'B': 'F17', 'C': 'F18', 'D': 'F19'}
-_HEAD = np.dtype([('year', '>u4'), ('jday', '>u2'), ('hour', 'u1'), ('minute', 'u1'), ('ms', '>u4'), ('rest', 'V24')])
+_HEAD = np.dtype([('year', '>u4'), ('jday', '>u2'), ('hour', 'u1'), ('minute', 'u1'), ('scan', '>u4'), ('ms', '>u4'),
+                  ('rest', 'V20')])
 _IMG = np.dtype([('lat8', '>i2'), ('lon8', '>i2'), ('scene', '>u2'), ('sfc', 'u1'), ('rain', 'u1'),
                  ('c8', '>i2'), ('c9', '>i2'), ('c10', '>i2'), ('c11', '>i2'),
                  ('lat', '>i2'), ('lon', '>i2'), ('c17', '>i2'), ('c18', '>i2')])
@@ -65,17 +66,16 @@ def _times(yyddd, start, end):
 
 
 def parse(path):
-    """整個檔讀成 (掃描的結構化陣列, 各掃描時間)。檔案大小不符時 ValueError。"""
+    """整個檔讀成 (掃描的結構化陣列, 各掃描時間)。檔案大小與檔頭的掃描數不符時 ValueError。"""
     with open(path, 'rb') as f:
         buf = f.read()
-    body = len(buf) - 40
-    if body <= 0 or body % _SCAN.itemsize:
-        raise ValueError(tr('%s 的大小不符合 SSMIS TDR 的記錄長度 (%d bytes)；這支讀取器未經實際檔案驗證，'
-                            '格式可能與預期不同',
-                            'the size of %s does not match the SSMIS TDR record length (%d bytes); this reader has '
-                            'not been verified against real files, so the format may differ from what it expects')
-                         % (os.path.basename(path), _SCAN.itemsize))
-    arr = np.frombuffer(buf, _SCAN, body // _SCAN.itemsize, 40)
+    nscan = int(np.frombuffer(buf, '>i2', 1, 18)[0]) if len(buf) >= 40 else 0
+    spare = len(buf) - 40 - nscan * _SCAN.itemsize          # 檔尾補到 512 的倍數
+    if nscan <= 0 or not 0 <= spare < 512:
+        raise ValueError(tr('%s 的大小不符合 SSMIS TDR 的格式 (檔頭 40 bytes + 掃描數 x %d bytes)',
+                            'the size of %s does not match the SSMIS TDR format (40-byte header + number of scans '
+                            'x %d bytes)') % (os.path.basename(path), _SCAN.itemsize))
+    arr = np.frombuffer(buf, _SCAN, nscan, 40)
     head = arr['head']
     time = np.full(arr.size, np.nan)
     for k in range(arr.size):
@@ -91,9 +91,8 @@ class SSMISTDRReader(SwathReader):
     NAME = 'SSMIS-TDR'
     SENSOR = 'SSMIS'
     SOURCE = 'CLASS'
-    DESCRIPTION = 'DMSP F16~F19 SSMIS TDR 天線溫度 (NOAA CLASS NPR.TDRN；未經樣本驗證)'
-    DESCRIPTION_EN = ('DMSP F16~F19 SSMIS TDR antenna temperature (NOAA CLASS NPR.TDRN; not verified against '
-                      'sample files)')
+    DESCRIPTION = 'DMSP F16~F19 SSMIS TDR 天線溫度 (NOAA CLASS NPR.TDRN)'
+    DESCRIPTION_EN = 'DMSP F16~F19 SSMIS TDR antenna temperature (NOAA CLASS NPR.TDRN)'
     PATTERNS = ('NPR.TDRN.S[A-Da-d].*',)
 
     def __init__(self, cfg):

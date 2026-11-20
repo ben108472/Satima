@@ -298,7 +298,7 @@ At a gap the spacing between adjacent scans exceeds the normal value, so it is l
 | `MWRI-L1` | `FY3?_MWRI?_GBAL_L1_*_010KM_MS.HDF` | 10.65\~89 GHz V/H, 10 channels in total, one set of latitude / longitude. FY-3F MWRI-II and FY-3G MWRI-RM have different formats and are not yet supported |
 | `SSMIS-SDR` | `NPR.SDRN.S[A-D].*` | Big-endian binary. Imager scenes (91, 150, 183 GHz, 180 points), environmental scenes (19, 22, 37 GHz, 90 points), LAS (50\~60 GHz sounding, 60 points, one scan in every 3) |
 | `SSMI-SDR` | `NPR.SDRR.S[4-9].*`, `NPR.TDRR.S[4-9].*` | SDR brightness temperature and TDR antenna temperature use the same reader. 19 / 22 / 37 GHz 64 points; the A and B scans of 85 GHz are interleaved into 128 points |
-| `SSMIS-TDR` | `NPR.TDRN.S[A-D].*` | **Not verified with real files** (see below) |
+| `SSMIS-TDR` | `NPR.TDRN.S[A-D].*` | Antenna temperature. Channels and scan structure as in SDR, but 19 / 22 GHz and 37 GHz each have their own latitude / longitude (SDR shares the 37 GHz position) |
 | `ATMS-SDR` | `SATMS_*.h5`, `TATMS_*.h5` | SDR brightness temperature and TDR antenna temperature of JPSS ATMS (S-NPP, NOAA-20, NOAA-21), 22 channels (including the 50\~57 GHz temperature sounding channels). A file is only 32 seconds long; files of the same satellite that are contiguous in time are joined into one entry automatically. **The latitude / longitude are in separate `GATMO_*.h5` files, which must be in the same folder** (see below) |
 | `AMSUA-L1B` | `AMSA_xxx_1B_M0x_*` (`.nat` or `.zip`) | EUMETSAT EPS native format of MetOp-A/B/C AMSU-A; the zip downloaded from the Data Store can be read directly. 15 channels (23.8, 31.4, 50.3\~57.29 GHz sounding, 89 GHz), 30 fields of view, 48 km at nadir. Radiances are converted to brightness temperature with the Planck function |
 
@@ -413,6 +413,13 @@ Samples: 9 files in `L1C-sample`, 26 files in `L1B-sample`.
 * `AMSUA-L1B` (MetOp-B, MetOp-C 2026/04/12): there is no product to compare against. The geolocation was confirmed with the coastline (the Iberian Peninsula, France, the UK and north-west Africa all line up);
   the brightness temperature was only checked for plausibility (sea surface at 23.8 GHz about 180\~220 K, land about 280 K, sounding channels 213\~254 K); **there is no numerical comparison with other products**.
   There is no sample from MetOp-A (M02).
+* `SSMIS-TDR` (F16 2009/10/18 02:27Z, Hurricane Rick; against the `NPR.SDRN` of the same orbit, matching scan by scan on the scan time):
+  the scan times are identical to SDR (the port of the old program took the scan counter for the time, which has been fixed; the zero padding at the end of the file up to a multiple of 512 is also handled);
+  the correlation between TA and TB is above 0.996 for all 19 channels; TA − TB has a mean of −0.9\~−6.9 K (largest at 19V), a standard deviation of 0.4\~2.2 K at 91 / 150 / 183 GHz
+  and 0.3\~0.7 K for the sounding channels. The positions of 37 / 91 / 150 / 183 GHz and of the sounding channels differ from SDR by 1.1 km (0.01 degree, i.e. rounding);
+  the 19 / 22 GHz positions differ from SDR by about 16 km: TDR has its own 19 / 22 GHz latitude / longitude, and interpolating with them to the SDR positions gives a smaller standard deviation
+  (19H 4.5 → 3.1 K, 19V 2.8 → 1.9 K, 22V 2.0 → 1.4 K), which shows that **the NOAA SDR resamples 19 / 22 GHz to the 37 GHz positions**
+  (which is why the 19 / 22 GHz standard deviation of SDR against L1C below cannot be brought down). There is only this one sample (F16); F17\~F19 were not tested.
 
 **PPS L1C versus NOAA SDR** (same orbit; the geolocation and calibration processing of the two products differ, so only the order of magnitude can be confirmed)
 * SSM/I F14 1998/10/13: the standard deviation of Tc − Tb for each channel is 0.5\~0.9 K (mean −1.8\~+0.7 K, i.e. the XCAL calibration adjustment);
@@ -422,8 +429,6 @@ Samples: 9 files in `L1C-sample`, 26 files in `L1B-sample`.
   presumably the NOAA SDR applies an additional resampling to these channels; this was not confirmed further.
 
 **Parts that could not be verified**
-* `SSMIS-TDR`: there is no sample file. The format was ported from the old `SSMIS_TDR.py`, and the program flow was confirmed only with a self-made fake file;
-  the field positions of the channels other than 91 GHz are the definitions in the old program and have not been confirmed with real data. When the file size does not match the expected record length, an error is raised straight away.
 * Colormap `rammb89`: the values were derived backwards from the color bar of a finished RAMMB image; they are not an officially published definition.
 * TDR antenna temperature is not converted to brightness temperature.
 
