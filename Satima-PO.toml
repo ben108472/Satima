@@ -1,0 +1,105 @@
+# ==================================================================
+#  Satima-PO.toml：極軌成像儀 (PO) 的設定 (TOML，UTF-8)
+#
+#  共同設定 (語言、目錄、地圖、海岸線、圖片大小與模式、標題、標註、檔名) 在 Satima.toml；
+#  這個檔只放極軌成像儀 (PO) 才有的設定，以及要和共同設定不同的項目 (同一個鍵兩邊都有時，以這個檔為準)。
+#  共同設定的任何一節都可以在這裡覆寫，只需要寫想改的那幾個鍵。
+#  最下方的 [readers.<格式>.<節>] 可以再針對單一格式覆寫。
+#  沒寫的項目使用程式內建預設值 (satima/core/config.py 與 satima/po/config.py 的 DEFAULTS)。
+# ==================================================================
+
+# ---- 與共同設定 (Satima.toml) 不同的項目 ------------------------------------
+[general]
+# 緯度 / 經度範圍 (中心往外的半寬) 超過此值時提醒記憶體用量；0 = 不提醒
+range_warning = 20
+
+[map]
+range_input = "center"   # 先問中心，再問範圍 (同原本的 Satima-PO；輸入 4 個數字仍然當成 南 北 西 東)
+
+[coastline]
+color = "#00BB00"
+linewidth = 0.5
+
+[image]
+# 原始解析度 = 這次所畫資料的取樣間距，由經緯度量出 (範圍內沿掃描 / 沿軌間距較細者，例如 VIIRS I 頻道星下點 0.375 km)，
+# 每個像素取最近的取樣點 (數值不內插)。
+max_size = 50000         # 長邊的上限 (像素)
+
+[title]
+ask = true               # 原本的 Picname：執行時詢問，會畫在圖片左下角並填入檔名的 {title}
+
+
+# ---- PO 才有的設定 ---------------------------------------------------------
+[swath]
+# 很短的片段 (VIIRS 約 85 秒、METimage 約 1 分鐘一檔) 一律自動接成一筆，資料列表的備註欄顯示檔數與缺檔數。
+# 整圈 / 半圈的長檔各自一列 (AVHRR 一次只讀一個檔，不合併)；一次選到時間相接的多列時合併成一張："ask" = 詢問、true = 直接合併、false = 各畫各的
+merge = "ask"
+merge_gap = 600.0        # 兩個檔的間隔在幾秒內視為同一段 (同一地點的兩次通過至少隔一圈，約 100 分鐘)
+
+[eyetemp]
+# 紅外線頻道：印出中心點半徑 radius_deg (度) 內的最高亮溫
+enable = true
+radius_deg = 0.5
+# 另外印出舊版的暖像元計數 (暖於 9~24°C 的像元數)
+legacy_counts = false
+
+
+[colormap]
+# 色表選單：順序即選單編號 (從 1 開始；選 0 = 全部輸出)
+#   file : colormap_dir 中的 .cmap 檔名 (不含副檔名)，顯示範圍取色表檔本身的範圍
+#   mpl  : matplotlib 內建色表 (例如 gray_r)，需搭配 vmin / vmax
+#   name : 選單與檔名 {colorbar} 顯示的名稱
+#   vmin / vmax 也可加在 file 色表上強制指定範圍
+ir = [
+    { name = "BW",            mpl = "gray_r", vmin = -80.0, vmax = 50.0 },
+    { name = "BD",            file = "bd" },
+    { name = "CycloneCenter", file = "cc" },
+    { name = "RBTOP",         file = "rbtop" },
+    { name = "CWB NPP_VIIRS", file = "cwbm" },
+    { name = "NRLCOLOR",      file = "color" },
+    { name = "NHC",           file = "nhc" },
+    { name = "RAMMB",         file = "rammb" },
+    { name = "OTT",           file = "ott" },
+    { name = "AVN",           file = "avn" },
+    { name = "RB",            file = "rb" },
+    { name = "MB",            file = "mb" },
+    { name = "CA",            file = "ca" },
+    # { name = "OTT-2",       file = "ott2" },
+]
+
+# 水氣頻道 (MODIS B27/B28、METimage VII-33/34)
+wv = [
+    { name = "BW",   mpl = "gray_r", vmin = -80.0, vmax = 50.0 },
+    { name = "NRL",  file = "nrl" },
+    { name = "SSD",  file = "ssd" },
+    { name = "NOAA", file = "noaa" },
+]
+
+
+# ==================================================================
+#  各格式的個別設定：[readers.<格式名稱>.<節名>] 可覆寫上面任何一節，只套用在該格式
+#  格式名稱 = sensors/po/ 中的腳本檔名 (python Satima.py --list 可查)
+# ==================================================================
+
+# 原 OLCI、SGLI 腳本的底色為白色
+[readers.OLCI-SAFE.image]
+background = "white"
+
+[readers.SGLI-HDF5.image]
+background = "white"
+
+# 範例：各衛星資料放在不同資料夾、輸出到不同資料夾
+# [readers.VIIRS-HDF5.general]
+# data_dir = "D:/data/viirs"
+# output_dir = "D:/png/viirs"
+#
+# [readers.MODIS-HDF4.general]
+# data_dir = "D:/data/modis"
+#
+# 範例：只有某個格式使用原始解析度模式
+# [readers.VIIRS-HDF5.image]
+# mode = "native"
+#
+# 範例：某個格式的海岸線改用別的顏色
+# [readers.AVHRR-NAT.coastline]
+# color = "yellow"

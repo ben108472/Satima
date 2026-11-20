@@ -1,0 +1,177 @@
+# ==================================================================
+#  Satima-MW.toml：微波 (MW) 的設定 (TOML，UTF-8)
+#
+#  共同設定 (語言、目錄、地圖、海岸線、圖片大小與模式、標題、標註、檔名) 在 Satima.toml；
+#  這個檔只放微波 (MW) 才有的設定，以及要和共同設定不同的項目 (同一個鍵兩邊都有時，以這個檔為準)。
+#  共同設定的任何一節都可以在這裡覆寫，只需要寫想改的那幾個鍵。
+#  最下方的 [readers.<格式>.<節>] 可以再針對單一格式覆寫。
+#  沒寫的項目使用程式內建預設值 (satima/core/config.py 與 satima/mw/config.py 的 DEFAULTS)。
+# ==================================================================
+
+# ---- 與共同設定 (Satima.toml) 不同的項目 ------------------------------------
+[map]
+range_input = "center"   # 微波通常以颱風中心為準：先問中心，再問範圍 (輸入 4 個數字仍然當成 南 北 西 東)
+
+# [image]
+# 微波的取樣很粗，原始取樣間距通常遠小於 min_size，會自動放大 (規則見 Satima.toml 的 [image])。
+# 全球範圍的圖把 Satima.toml 的 [map] resolution 改成 "l"，否則 basemap 讀海岸線很慢。
+
+
+# ---- MW 才有的設定 ---------------------------------------------------------
+[swath]
+# 取樣 (內插) 方式 —— 微波的取樣很粗，直接畫會一格一格的 (見 docs/MW.md「內插」)：
+#   "gauss"     高斯距離加權 (NRL GeoIPS 的做法)：每個像素取周圍取樣點依實際距離的加權平均，預設。
+#               各方向同樣平滑，兩個方向取樣間距相差很多的儀器 (WSF-M MWI、GMI…) 也不會有鋸齒；
+#               代價是解析度降到較粗的那個方向，單點的極值會被拉平
+#   "cubic"     在掃描帶的索引空間做三次內插 (限制斜率)：保留沿掃描方向的細節，
+#               但取樣間距不對稱的儀器，斜向的眼牆、雨帶會呈鋸齒狀
+#   "bilinear"  索引空間的雙線性內插
+#   "nearest"   關閉內插：每個取樣點畫成一塊，看到的是原始取樣
+interpolation = "gauss"
+
+# gauss 的 σ (權重 = exp(-距離² / σ²)，同 pyresample)，越大越平滑：
+#   "x0.7"  該處較粗方向取樣間距的 0.7 倍 (預設；可寫 "x0.3"~"x3")。隨儀器與頻道自動調整：
+#           MWI 約 10.6 km、GMI 9 km、SSMIS 91 GHz 9 km、AMSR 89 GHz (A/B 合併) 3.5 km。
+#           "x0.5" 較銳利，但與掃描線斜交的窄雨帶會開始變成一顆一顆
+#   10      固定的公里數。NRL 的 89 GHz、PCT 與 RGB 產品用 10，19 / 37 GHz 的單頻道用 25
+gauss_sigma = "x0.5"
+
+# AMSR2 / AMSR3 的 89 GHz 有 A、B 兩組掃描 (各自沿軌 10 km)：
+#   true  合併成一個頻道 89V / 89H，沿軌取樣變成約 5 km
+#   false 分開列為 89V-A、89V-B、89H-A、89H-B
+merge_ab = true
+
+# 一次選到同衛星、同儀器、時間相接的多個檔 (NASA 即時 L1C 每 10 分鐘一檔、JAXA L1B 半圈一檔) 時，
+# 接起來畫成一張："ask" = 詢問、true = 直接合併、false = 各畫各的
+merge = "ask"
+merge_gap = 120.0        # 前一檔結束到下一檔開始的間隔在幾秒內視為相接
+
+# NASA L1C / 1B 的品質旗標 (Quality)。嚴重錯誤 (負值) 的亮溫 PPS 已經設成無資料，所以一般不必再處理 (false)。
+# true = 旗標為負的取樣點整點不用。注意旗標是「同一組頻道共用」的：只要其中一個頻道故障，整組都是負值，
+# 設 true 會連同正常的頻道一起變成無資料 (F18 SSMIS 的 150 GHz 故障 -> 183 GHz 也沒了；
+# NOAA-15 AMSU-B 2008 年的 183±3 故障 -> 89、150 GHz 也沒了)
+mask_bad_quality = false
+# 掃描帶涵蓋地圖的比例低於此值時視為沒有通過，略過不畫
+min_coverage = 0.002
+
+
+[gray]
+# 選單中 GRAY (灰階) 的顯示範圍 (K)；reverse = true 時冷 (冰晶散射強) 為白
+range = [150.0, 300.0]
+reverse = true
+
+
+[pct]
+# PCT (極化修正亮溫) = (1 + θ) x V - θ x H 的 θ，依頻率分：
+#   預設為 Cecil and Chronis (2018)：10 GHz 1.5、19 GHz 1.4、37 GHz 1.15、85~91 GHz 0.7
+#   85 GHz 另一個常用值是 Spencer et al. (1989) 的 0.818；NRL 的 37 GHz 用 1.181 (Lee et al. 2002)
+tb10 = 1.5
+tb19 = 1.4
+tb37 = 1.15
+tb89 = 0.7
+
+
+# ------------------------------------------------------------------
+# RGB 合成。每一節 [rgb.<名稱>] 是選單中的一個產品：
+#   band   用哪個頻率的 V / H："tb37" (30~40 GHz)、"tb89" (80~95 GHz)、"tb19"、"tb10"
+#   theta  這個配方 PCT 的 θ (不寫 = [pct] 的值)
+#   red / green / blue：source = "pct" / "v" / "h"，range = [最小, 最大] (K) 線性拉伸到 0~1，
+#                       inverse = true 反相，gamma (預設 1.0)
+#   enabled = false 可把某個配方從選單拿掉
+# 要增加自己的配方，照樣加一節即可。
+# ------------------------------------------------------------------
+# NRL 37 GHz color composite (Lee et al. 2002；數值取自 NRL GeoIPS 的 pmw_color37)：
+# 海面深綠、低層雲雨青色、深對流粉紅
+[rgb.NRL-37]
+band = "tb37"
+theta = 1.181
+red = { source = "pct", range = [260.0, 280.0], inverse = true }
+green = { source = "v", range = [180.0, 300.0] }
+blue = { source = "h", range = [160.0, 300.0] }
+
+# RAMMB/CIRA TC Realtime 網頁說明的 37 GHz color composite
+[rgb.RAMMB-37]
+band = "tb37"
+red = { source = "pct", range = [260.0, 280.0], inverse = true }
+green = { source = "v", range = [160.0, 300.0] }
+blue = { source = "h", range = [180.0, 310.0] }
+
+# NRL 89 GHz color composite (NRL GeoIPS 的 pmw_color89)：深對流紅色
+[rgb.NRL-89]
+band = "tb89"
+theta = 0.818
+red = { source = "pct", range = [220.0, 310.0], inverse = true }
+green = { source = "h", range = [240.0, 300.0] }
+blue = { source = "v", range = [270.0, 290.0] }
+
+# RAMMB 的 85~92 GHz 產品不是 RGB，而是單頻道亮溫 (優先用水平極化) 配色階：
+# 選 89H (SSM/I 85H、SSMIS 91H) 後，色表選 RAMMB 即可 (見下方 [colormap] tb89)
+
+# ------------------------------------------------------------------
+# 「任意頻道」配方 (沒有 band)：各色槍直接指定頻道，給沒有雙極化的探空儀 (ATMS、MHS、AMSU-A / B、SAPHIR) 用；
+# 有這些頻道的成像儀 (SSMIS、GMI、AMSR3) 也會列出。
+#   channel = "89" / "150" / "183±7" / "23.8" …  頻率 (GHz)；可加極化 ("89H")。取同一類頻率中最接近的頻道
+#             (相差 12% 以內：150 會對到 150 / 157 / 165.5 / 166；183±7 對到 ±7 / ±6.6 / ±6.8，MHS 的 190.31 也算 ±7)
+#   minus   = "150"   再減掉另一個頻道 (此時 range 是兩者的差)；例：red = { channel = "89", minus = "150", range = [-20.0, 50.0] }
+#   range、inverse、gamma 同上。三個色槍的頻道都有時才會出現在選單。
+# !! RGB-150 是試作，不是 NRL / RAMMB 的官方配方 (NRL 2004 年有 AMSU-B 的 89 / 150 GHz 假色合成，但配方沒有公開)。
+# ------------------------------------------------------------------
+# 觀感比照 NRL-89：海面青綠、深對流紅。缺點：89 GHz 沒有極化修正，乾冷的海面也偏紅 (中高緯度、乾空氣帶)
+[rgb.RGB-150]
+red = { channel = "89", range = [220.0, 280.0], inverse = true }
+green = { channel = "150", range = [180.0, 380.0] }
+blue = { channel = "183±7", range = [200.0, 340.0] }
+
+
+
+[report]
+min_tb = true            # 色表 / 灰階產品：印出地圖範圍內的最低值 (K；以原始取樣值為準)
+max_tb = false
+
+
+# ------------------------------------------------------------------
+# 色表選單：GRAY 固定為 1，之後依下列順序編號。分組：
+#   tb89  80~95 GHz        tb37  30~40 GHz        tb150  140~200 GHz        tb  其他頻率
+#   pct89 / pct37 / pct (其他頻率的 PCT)
+# file = colormap 目錄中的 .cmap 檔名 (單位 K；顯示範圍預設取色表的兩端，可用 vmin / vmax 覆寫)
+# 或 mpl = matplotlib 色表名稱 (需寫 vmin / vmax)，例如 { name = "JET", mpl = "jet_r", vmin = 180, vmax = 290 }
+# ------------------------------------------------------------------
+[colormap]
+tb89 = [
+    { name = "NRL", file = "nrl89" },        # 165~280 K (原 mpkit 的 NRL89)
+    { name = "NRL2", file = "89h" },         # 105~305 K (NRL GeoIPS 89H)
+    { name = "RAMMB", file = "rammb89" },    # 72~323 K (RAMMB/CIRA TC Realtime 的 85~92 GHz 亮溫色階)
+    { name = "MWNRL", file = "mwnrl" },      # 150~320 K (舊版 Satima-SSMIS 的色表)
+]
+tb37 = [
+    { name = "NRL", file = "37h" },          # 125~300 K (NRL GeoIPS 37H)
+    { name = "MWNRL", file = "mwnrl" },
+]
+tb150 = [
+    { name = "NRL", file = "150h" },         # 110~310 K (NRL GeoIPS 150H)
+    { name = "MWNRL", file = "mwnrl" },
+]
+tb = [
+    { name = "MWNRL", file = "mwnrl" },
+    { name = "NRL37", file = "37h" },
+]
+pct89 = [
+    { name = "NRL", file = "nrlpct" },       # 160~260 K (原 mpkit 的 NRLPCT)
+    { name = "NRL2", file = "89pct" },       # 105~280 K (NRL GeoIPS 89pct)
+]
+pct37 = [
+    { name = "NRL", file = "37pct" },        # 230~280 K (NRL GeoIPS 37pct)
+]
+pct = [
+    { name = "NRL37", file = "37pct" },
+    { name = "NRL89", file = "nrlpct" },
+]
+
+
+# ------------------------------------------------------------------
+# 各格式個別的設定：[readers.<格式名稱>.<節>]，例如各格式放在不同資料夾
+# ------------------------------------------------------------------
+# [readers.PPS-L1C.general]
+# data_dir = "D:/data/L1C"
+# [readers.SSMIS-SDR.general]
+# data_dir = "D:/data/NOAA"

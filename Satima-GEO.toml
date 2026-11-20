@@ -1,0 +1,304 @@
+# ==================================================================
+#  Satima-GEO.toml：靜止衛星 (GEO) 的設定 (TOML，UTF-8)
+#
+#  共同設定 (語言、目錄、地圖、海岸線、圖片大小與模式、標題、標註、檔名) 在 Satima.toml；
+#  這個檔只放靜止衛星 (GEO) 才有的設定，以及要和共同設定不同的項目 (同一個鍵兩邊都有時，以這個檔為準)。
+#  共同設定的任何一節都可以在這裡覆寫，只需要寫想改的那幾個鍵。
+#  最下方的 [readers.<格式>.<節>] 可以再針對單一格式覆寫。
+#  沒寫的項目使用程式內建預設值 (satima/core/config.py 與 satima/geo/config.py 的 DEFAULTS)。
+# ==================================================================
+
+# ---- 與共同設定 (Satima.toml) 不同的項目 ------------------------------------
+[map]
+# GEO 另有 fd (全圓盤，衛星視角)，執行時的投影選單會多一項：
+#   fd 的星下點與衛星高度取自資料，不需輸入經緯度範圍；
+#   Himawari、GOES-R 等標準靜止衛星投影的資料，原始解析度時輸出像素與原始像素一一對應。
+# 區域觀測 (目標區、mesoscale 等) 不詢問範圍，直接用整個影像。
+# projection = "merc"
+
+[coastline]
+linewidth = 0.1
+
+[borderline]
+linewidth = 0.5
+
+[image]
+max_size = 25000          # 原始解析度時長邊的上限 (像素)
+# 原始解析度的倍數 ([image] size = "x2"~"x8")：
+#   搭配 interpolation = "nearest"、"x3"~"x4"：每個原始像素畫成約 3x3~4x4 的方塊，所有原始像素都看得到、數值不變，
+#   方塊大小的不規則程度從約 25~45% 降到 15% 左右；像素數為倍數的平方。
+#   全圓盤與原始像素對齊時 (Himawari、GK-2A、MTG、MTSAT、SEVIRI；GOES-R 需 cartopy) 原始解析度已經一格對一個
+#   原始像素，不套用倍數；GOES-R 用 basemap 及 GMS、GOES-1~15 等舊衛星的全圓盤沒有對齊，仍會放大。
+# 輸出像素比原始像素細或相近時 (例如紅外 2 km 畫在麥卡托、高緯度或斜視區域) 的取值方式：
+#   "bilinear" 雙線性內插：邊緣平順 (預設)
+#   "nearest"  最近鄰：保留原始像素值，但部分像素會不規則地重複，畫面出現階梯與拼貼感
+# 適用於單波段/色表產品與 GeoColor 的夜間紅外；輸出比原始解析度粗兩倍以上時一律區塊平均。
+# 全圓盤原始解析度 (輸出像素與原始像素一一對應) 時兩者結果相同。
+# 最高/最低雲頂溫度一律以原始像素值計算。
+interpolation = "nearest"
+
+[title]
+box_pad = 2             # 文字到框邊的留白 (點)
+
+[annotation]
+# 可用欄位：{time} {satellite} {sensor} {band} {wavelength} {colorbar} {product} {area} {title} {reader} {projection}
+#   {band}       BAND-13 (Himawari、GOES、GK-2A)、BAND-14 FDHSI / BAND-14 HRFI (MTG)、TrueColor、TrueColor HRFI
+#   {wavelength} 10.4µm (真實色為空)
+#   {product}    {band}-{colorbar}，例如 BAND-13-OTT
+# 例：2026/11/08 0400Z    HIMAWARI-9 BAND-13 10.4µm BD
+text = "{time}    {satellite} {band} {colorbar}"
+
+
+# ---- GEO 才有的設定 --------------------------------------------------------
+[visible]
+# 單波段可見光 / 近紅外 (真實色不受影響)；處理順序：太陽天頂角校正 -> 乘上 scale -> gamma
+gamma = false                    # 平方根 gamma 提亮
+sun_zenith_correction = false    # 除以 cos(太陽天頂角)
+scale = 1.0                      # 反射率乘上此倍數再顯示 (>1 提亮；顯示範圍 0~1，超過 1 為白色)
+# GOES-8~15：套用 NOAA 發射後校正 (可見光感測器在軌道上逐年衰減，只用發射前係數影像會偏暗 15~80%)
+#   GOES-11/12/13/15 依 STAR 每月修正值 (conversion_table/GOES/GOES_Imager_Vis_OpCal.txt)，
+#   GOES-8/10 依 OSPO 線性衰減式，GOES-14 固定 x 1.0695 (2009/12 發射後測試的 MODIS 比對值)；GOES-9 沒有官方值，不修正
+post_launch_calibration = true
+# GMS-TAPE (GMS-1 磁帶)：可見光第 2 感測器故障，每 4 條掃描線缺 1 條；
+#   true = 以上下兩條的反照率平均補上 (McIDAS AREA 檔也是這樣補)；false = 保留為無資料 (底色的橫線)
+fill_missing_lines = true
+
+
+[seviri]
+# MSG (Meteosat-8~11) SEVIRI 的定標 (SEVIRI-HRIT / SEVIRI-NAT / SEVIRI-NC)：
+#   "nominal" = 檔頭的定標係數 (預設，同 EUMETSAT 與 satpy)
+#   "gsics"   = 紅外改用檔頭中 MPEF 的 GSICS 修正係數 (沒有時用 nominal；NetCDF 格式沒有此係數)
+#   "meirink" = 可見光 VIS006 / VIS008 / IR_016 改用 Meirink 2023 的逐年衰減修正
+calibration = "nominal"
+# 壓縮的 HRIT (檔名結尾 -C_) 需要 pyPublicDecompWT (pip install pyPublicDecompWT)；
+# 沒有安裝時可指定 EUMETSAT 的 xRITDecompress 執行檔，例如 "C:/xRIT/xRITDecompress.exe" 或 "wsl /opt/xRITDecompress"
+xrit_decompress = ""
+
+
+[report]
+# 色表強化圖印出範圍內的最高 / 最低雲頂溫度
+max_tbb = true
+min_tbb = true
+
+
+[navigation]
+# 舊衛星的導航：GMS (GMS-VISSR、GMS-TAPE、GMS-AREA) 的 JMA MGIVSR、GOES-8~15 (GOES-GVAR、GOES-AREA) 的 O&A 模型、
+# SMS / GOES-1~7 (GOES-PREGVAR) 的 McIDAS 'GOES' 自旋掃描模型
+# 計算方式，三者演算法相同、結果一致 (差 < 1e-10 像素)，每個輸出像素都逐點精確計算：
+#   "numba"  不需編譯 (第一次使用時自動編譯並快取)
+#   "cython" 需先編譯一次：python sensors/build_vissr_nav_cy.py (需要 Cython 與 C 編譯器；換 Python 版本要重編)
+#   "numpy"  不需任何套件編譯，較慢
+engine = "numba"
+# 地球邊緣修正 (JMA MSC Technical Note No.26)：以每條掃描線實際的地球東西邊緣修正導航偏移 (GMS-VISSR、GMS-TAPE)
+# 西澳海岸線比對：修正前偏 2~5 km，修正後約 1.5~3 km (JMA：1 個紅外像素以內)
+earth_edge_correction = true
+
+
+[truecolor]
+# CIRA SHAC True Color (Miller et al. 2016 BAMS, 2020 JTECH)
+# 混合綠光：G = (1-f) x G0.51 + f x NIR0.86；ABI 的 G0.51 為合成綠光
+# CIRA 論文為約 0.07；與 CIRA 實際圖片比對 (GOES-19、Himawari-9、GK-2A、MTG-I1)，0.09 時植被色調最接近
+hybrid_green_fraction = 0.09
+# ABI 沒有綠光波段：
+#   "ahi"              CIRA 作法：以 AHI 擬合的 G0.51 = 0.976 x 藍^0.668 x 紅^0.347，再混入近紅外 (同上)
+#   [藍, 紅, 近紅外]    線性權重，不再另混近紅外 (舊版 CIMSS [0.45, 0.45, 0.10]；satpy [0.465, 0.465, 0.07]，陸地偏綠)
+abi_green = [0.45, 0.45, 0.10]
+# Rayleigh 散射校正：
+#   "full"      扣除路徑反射後除以大氣穿透率並考慮球面反照率 (SeaDAS / CREFL；CIRA 作法)，近紅外也校正
+#   "subtract"  只扣除路徑反射 (舊版：雲偏黃、海面與陸地偏暗)
+rayleigh_correction = "full"
+# 依 10.4 um 亮溫減少高雲上的雷利散射校正 (283 K 不減，233 K 減 70%)
+cloud_rayleigh_reduction = true
+# 高雲的穿透率與球面反照率也用同一個削減係數 (雲頂上方只剩這個比例的大氣；需要上一項與 "full" 校正)。
+#   false = 舊版：只削減路徑反射、穿透率仍用整層大氣，高雲的藍光被過度放大，太陽越低雲頂越藍
+cloud_rayleigh_transmittance = true
+# 臭氧吸收校正的臭氧量 (atm-cm；0.30 = 300 DU，全球平均；熱帶約 0.26、中高緯度春季可到 0.40)；0 或 false = 不校正
+#   臭氧吸收紅光最多、藍光最少 (0.64 / 0.51 / 0.47 um 約 0.082 / 0.040 / 0.011 每 atm-cm)，光程越長雲越偏藍：
+#   太陽天頂角 80° 時紅光約少 15%。校正後深對流雲在太陽天頂角 0~80° 的色調幾乎不變。
+ozone = false
+# 輸出比 1 km 細時，以 0.5 km 紅光做比例銳化 (ratio sharpening)
+sharpen = true
+# 太陽天頂角校正的上限與淡出角度 (度)
+sza_limit = 88.0
+sza_max = 95.0
+# 晨昏線在這兩個太陽天頂角之間淡出為夜間 (消除紫色帶)
+terminator_fade_start = 80.0
+terminator_fade_end = 90.0
+# pyspectral 大氣：us-standard / tropical / midlatitude summer / midlatitude winter /
+#                  subarctic summer / subarctic winter
+atmosphere = "us-standard"
+# 逐像素合成的計算方式 (結果相同，只差浮點運算順序)：
+#   "numba"  預設：融合成單一迴圈，單核心快數倍，且可多核心 ([memory] workers)；第一次執行需編譯約 10~20 秒
+#   "numpy"  沒有 numba 時自動改用
+engine = "numba"
+# 各衛星可見光波段的相對增益 (只用於真實色 / GeoColor，單波段影像不受影響)；false = 不調整
+#   寫法：{ 衛星 = { 波段 = 倍數 } }，任何衛星都可以加，例如 { Himawari-9 = { B01 = 0.94 }, GOES-19 = { C01 = 1.05 } }
+#   深對流雲 (10.4 um < -55°C，可見光應接近白色) 校正後的 藍/紅、綠/紅 (太陽天頂角 < 50°，上面兩項校正開啟)：
+#     Himawari-9 1.06、1.02 (兩個時次相同)；Himawari-8 0.98、0.98；GOES-19 0.95；GOES-16 (2019) 1.06
+#   Himawari-9 乘上下列倍數後兩個比值都是 1.00 (太陽天頂角 80° 時 1.03、1.01)。
+#   關閉上面兩項校正時請改回 { B01 = 0.92, B02 = 0.95 }。
+band_gain = { Himawari-9 = { B01 = 0.94, B02 = 0.98 } }
+# 色調曲線 (反射率 -> 顯示亮度；GeoColor 的白天圖層也適用)：
+#   "cira"      CIRA 論文原式 (與 CIRA SLIDER 相同)：反射率 0.025~1.2 取 log10。
+#               輸出最亮只到 241 (厚雲約 212~230，偏灰)；反射率低於 0.025 一律為 0，
+#               晴空海面的紅光有五~六成像素是 0，海面呈塊狀的藍黑色。
+#   "enhanced"  同一條 log 曲線、中間調幾乎不變，只改兩端：雲較白且層次較多 (最亮 ~254)，海面暗部保留層次。
+tone = "cira"
+# 以下三項只在 tone = "enhanced" 時使用
+white_point = 1.25       # 對應全白的反射率 (CIRA 原式為 1.5)；調低 = 整體較亮、雲較白 (1.1 時厚雲約 230)
+shoulder = 0.95          # 顯示值超過此值 (0~1) 後平滑壓縮到 1，最亮的雲頂不會整片死白；1 = 不壓縮
+shadow_toe = 0.006       # 暗部平滑下限的寬度 (反射率)；調大 = 海面較亮較灰，0 = 同 CIRA 硬截斷
+# 飽和度 (兩種曲線都適用)：1 = 不調整；1.25 左右植被與海面較鮮明。亮部逐漸不放大，雲不會染色
+saturation = 1.0
+
+
+[geocolor]
+# 第 2 種真實色風格 GeoColor (CIRA GeoColor V2.0，Miller et al. 2020 JTECH)：白天同 TrueColor，
+# 夜間疊上 10.4 um 高雲 (白)、10.4-3.9 um 低雲 (淺藍) 與城市燈光，晨昏線依太陽天頂角混合。
+# 有 3.9 與 10.4 um 波段時，產品選單的 RGB 會多出 GeoColor (AHI、ABI、GK-2A、MTG)。
+# 城市燈光：VIIRS 年平均夜光 GeoTIFF (EOG VNL v2，nW/cm2/sr)；資料夾 (取最新的 .tif) 或檔案，相對路徑以 Satima.py 所在目錄為準
+#   需要 GDAL (osgeo)；空字串 = 不畫燈光。內附 2024 年 500 m 版本 (Zenodo 10.5281/zenodo.17294744，CC BY 4.0)
+nightlights = "nightlights"
+# 以下預設值取自 CIRA 目前 (2025 年更新後) 的 SLIDER 圖片 (GOES-19、MTG 逐像素反推)；論文原值寫在括號內
+# 日夜混合：cos(太陽天頂角) 由下限 (全夜) 到上限 (全日) 漸變再取次方
+#   [0.0, 0.18]、1.75 → SZA 約 90°~79.6° (論文 [0.1, 0.3]、1.5 → 84.3°~72.5°，晨昏線較早變暗)
+twilight_cos = [0.0, 0.18]
+twilight_power = 1.75
+# 高雲圖層的亮溫範圍 (K)：冷端全白、暖端全透明；冷端在緯度 30°~60° 之間再增加 20 K (論文 [200, 280])
+ir_range = [178.0, 301.0]
+# 顏色 (0~1)：低雲、無燈光的陸地 (深紫)、水面 (黑)
+low_cloud_color = [0.55, 0.75, 0.98]
+land_color = [0.06, 0.03, 0.13]
+water_color = [0.0, 0.0, 0.0]
+
+
+[landsea]
+# 海陸底圖 CWA：灰階雲疊在陸地 / 海洋底色上 (仿 CWA 官網「紅外線彩色雲圖」)。
+# 選單：色表選 1.GRAY 之後的第 2 層 (GRAY basemaps: 1.NONE 2.CWA 3.LIGHTS 4.NASA 5.NICT)；
+# 可見光 / 近紅外為 1.NONE 2.CWA 3.NASA 4.NICT。水氣看不到地表，沒有底圖。
+# 夜光底圖 LIGHTS 見 [nightmap]，Blue Marble 底圖 NASA / NICT 見 [bluemarble] / [nictmap]。
+# 合成：輸出 = a x 灰階 + (1 - a) x 底色；底色為陸地 / 海洋兩色 (海岸處依陸地比例混合)，
+# 地形紋理來自紅外本身 (山區地表較冷)。預設值以 CWA 官網 2026-11-13 11:30 UTC 全圓盤圖對照同時次 B13 反推。
+name = "CWA"                     # 選單與檔名 {colorbar} 的名稱
+# 海陸遮罩：GSHHS 全解析度海岸線 (basemap 內建) 柵格化的 30 角秒 (約 0.93 km) 陸地比例；
+# 檔案不存在時自動產生 (numba 約 30 秒)。相對路徑以 Satima.py 所在目錄為準。湖泊用海洋的顏色。
+mask = "landsea/gshhs_f_30s.tif"
+land_color = [124, 145, 85]      # 陸地 (0~255)
+ocean_color = [31, 40, 118]      # 海洋與湖泊
+# 紅外灰階：[亮溫 °C, 灰階 0~255] 節點間線性內插 (與一般 IR GRAY 的 -80~50°C 不同)
+ir_gray = [[-95, 255], [-80, 235], [-60, 207], [-40, 176], [-20, 144], [0, 113], [20, 86], [80, 0]]
+# 雲的透明度 a = clip((T0 - T) / (T0 - T1), 0, 1) ^ alpha_power：亮溫 T0 以上全透明、T1 以下不透明
+ir_alpha = [26.1, -44.7]
+# 可見光：反射率由第 1 個數值 (全透明) 漸變到第 2 個數值 (不透明)；灰階 = 反射率 ([visible] 的倍數、gamma 也適用)
+vis_alpha = [0.10, 0.50]
+alpha_power = 0.8
+# 是否畫海岸線、國界、經緯線 (依 [coastline] [borderline] [latlon] 的設定)
+lines = false
+
+
+[nightmap]
+# 夜光底圖 LIGHTS (只有紅外)：雲疊在城市燈光上，做法同 GeoColor 的夜間圖層 (不含需要 3.9 um 的低雲)：
+#   底色 = [geocolor] land_color / water_color (海岸處依 [landsea] mask 的陸地比例混合)，城市燈光處為鈉燈的橘黃色
+#   輸出 = N_IR x 白 + (1 - N_IR) x 底色，N_IR = 1 - N(亮溫)[IRmin, IRmax]，範圍為 [geocolor] ir_range (冷端隨緯度增加 20 K)
+# 城市燈光檔為 [geocolor] nightlights；找不到時略過此產品。
+name = "LIGHTS"                  # 選單與檔名 {colorbar} 的名稱
+lines = false                    # 是否畫海岸線、國界、經緯線
+
+
+[bluemarble]
+# Blue Marble 底圖 NASA (紅外與可見光)：白雲依亮溫 / 反射率半透明，疊在 NASA Blue Marble 上
+# (仿 NICT Himawari-8 Real-time Web https://himawari8.nict.go.jp/ 的各波段畫面)。
+#   輸出 = a x cloud_color + (1 - a) x Blue Marble；無資料的像素只有底圖
+# 透明度以 NICT 網站的 B13 / B03 雲圖對照同時次的 HSD 逐像素反推 (誤差 < 0.5 個色階)。
+# 這裡的雲設定 (cloud_color、ir_alpha、vis_alpha) 也用於 NICT 底圖 [nictmap]。
+name = "NASA"                    # 選單與檔名 {colorbar} 的名稱
+# 底圖：NASA Blue Marble Next Generation 2004 (公有領域，註明 NASA Earth Observatory)，較暗、高原有積雪。
+# 檔案不存在時第一次使用會由 NASA GIBS 自動下載 (約 1 km、67.5 MB，需要網路，約 6 分鐘)。
+image = "bluemarble/BlueMarble_NextGeneration_GIBS_1km.tif"
+cloud_color = [255, 255, 255]    # 雲的顏色 (0~255)
+# 紅外：兩點 [亮溫 °C, 不透明度 0~255]；兩點之間與更冷處依 10.4 µm 的輻射量線性 (不是亮溫線性)，
+# 限制在 0~255。NICT：10.5°C 以上全透明，-80°C 為 230.5 (約 90%)，-84°C 約 235。
+ir_alpha = [[10.5, 0], [-80.0, 230.5]]
+# 可見光：兩點 [反射率, 不透明度 0~255]，線性 ([visible] 的處理之後)。NICT：不透明度 = 反射率 x 255，
+# 不做太陽天頂角校正 (= [visible] 預設值)。
+vis_alpha = [[0.0, 0], [1.0, 255]]
+lines = false                    # 是否畫海岸線、國界、經緯線
+
+
+[nictmap]
+# Blue Marble 底圖 NICT (紅外與可見光)：雲的合成同 [bluemarble]，底圖改為 NICT 網站所用的
+# NASA Blue Marble 2002 (land_shallow_topo：陸地較亮、海洋為均勻的藍紫色、高原無雪)。
+# 與 NICT 網站的底圖比對，陸地與海洋的平均色差 < 1 個色階。
+name = "NICT"                    # 選單與檔名 {colorbar} 的名稱
+# 檔案不存在時第一次使用會由 Wikimedia Commons 自動下載 NASA 原圖 (21600x10800 JPEG，57.6 MB) 並轉檔
+# (約 1.85 km、44.9 MB；需要網路，轉檔時暫時需要約 1.5 GB 記憶體)。Wikimedia 有時會限流 (HTTP 429)，見 docs/GEO.md。
+image = "bluemarble/BlueMarble_2002_land_shallow_topo_2km.tif"
+lines = false                    # 是否畫海岸線、國界、經緯線
+
+
+[colormap]
+# 色表選單：順序即選單編號 (選 0 = 全部輸出)
+#   紅外：1 = 灰階 GRAY (之後再選底圖，見 [landsea] [nightmap] [bluemarble] [nictmap])，ir 的第一個是 2
+#   水氣：1 = 灰階 GRAY，wv 的第一個是 2
+#   file : colormap_dir 中的 .cmap 檔名 (不含副檔名)，顯示範圍取色表檔本身的範圍
+#   mpl  : matplotlib 內建色表 (例如 jet)，需搭配 vmin / vmax (°C)
+#   name : 選單與檔名 {colorbar} 顯示的名稱
+#   vmin / vmax 也可加在 file 色表上強制指定範圍
+ir = [
+    { name = "BD",    file = "bd" },
+    { name = "COLOR", file = "color" },
+    { name = "CC",    file = "cc" },
+    { name = "RAMMB", file = "rammb" },
+    { name = "NHC",   file = "nhc" },
+    { name = "OTT",   file = "ott" },
+    { name = "RBTOP", file = "rbtop" },
+    { name = "AVN",   file = "avn" },
+    { name = "RB",    file = "rb" },
+    { name = "MB",    file = "mb" },
+    { name = "CA",    file = "ca" },
+    { name = "CWBM",  file = "cwbm" },
+]
+
+# 水氣頻道
+wv = [
+    { name = "NRL",  file = "nrl" },
+    { name = "SSD",  file = "ssd" },
+    { name = "NOAA", file = "noaa" },
+]
+
+
+[readers.AHI-HSD.truecolor] #偏藍設定
+cloud_rayleigh_transmittance = true #雲要藍設false
+ozone = false
+band_gain = { Himawari-9 = { B01 = 0.95, B02 = 0.95 } }
+
+[readers.ABI-NC.truecolor] #偏藍設定
+cloud_rayleigh_transmittance = true #雲要藍設false
+ozone = 0.3
+#band_gain = { Himawari-9 = { B01 = 0.95, B02 = 0.95 } }
+
+# ==================================================================
+#  各格式的個別設定：[readers.<格式名稱>.<節名>] 可覆寫上面任何一節，只套用在該格式
+#  格式名稱 = sensors/geo/ 中的腳本檔名 (python Satima.py --list 可查)：
+#    AHI-HSD (Himawari-8/9)、ABI-NC (GOES-16~19)、AMI-NC (GK-2A)、FCI-NC (MTG-I)、MTSAT-HRIT (MTSAT-1R/2)、
+#    MI-HDF (COMS-1)、GMS-VISSR (GMS-1~5、GOES-9)、GMS-TAPE (GMS-1 磁帶映像)、GMS-AREA (GMS McIDAS AREA)、
+#    GOES-GVAR (GOES-8~15 原始 GVAR：NOAA CLASS / NSMC)、GOES-AREA (GOES-8~15 McIDAS AREA)、
+#    GOES-PREGVAR (SMS-1/2、GOES-1~7 VISSR / VAS 的 McIDAS AREA)、
+#    SEVIRI-HRIT / SEVIRI-NAT / SEVIRI-NC (MSG：Meteosat-8~11)、MVIRI-FCDR / MVIRI-NC (MFG：Meteosat-2~7)
+# ==================================================================
+
+# 範例：各衛星資料放在不同資料夾、輸出到不同資料夾
+# [readers.AHI-HSD.general]
+# data_dir = "D:/data/himawari"
+# output_dir = "D:/png/himawari"
+#
+# [readers.ABI-NC.general]
+# data_dir = "D:/data/goes"
+#
+# 範例：GOES 的真實色改用 satpy 的綠光權重
+# [readers.ABI-NC.truecolor]
+# abi_green = [0.465, 0.465, 0.07]
+
+# MTSAT 可見光：HRIT 的標稱反照率偏暗 (感測器衰減、未除以太陽天頂角)，同舊版乘 1.4 提亮
+[readers.MTSAT-HRIT.visible]
+scale = 1.4

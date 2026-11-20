@@ -1,0 +1,178 @@
+# ==================================================================
+#  Satima 共同設定檔 (TOML，UTF-8)：靜止衛星 GEO、微波 MW、極軌成像儀 PO 都適用的設定
+#
+#  各類衛星另有自己的設定檔，可以覆寫這裡的任何一節：
+#    Satima-GEO.toml  靜止衛星 (真實色、底圖、紅外色表 …)
+#    Satima-MW.toml   微波 (內插、PCT、RGB、色表 …)
+#    Satima-PO.toml   極軌成像儀 (颱風眼溫度、色表 …)
+#  優先順序：程式內建預設值 < Satima.toml < Satima-<類別>.toml < [readers.<格式>] < 命令列。
+#  每個設定只需要寫在一處；同一個鍵兩邊都有時，類別檔蓋過這裡。沒寫的項目使用內建預設值，所以可以只留想改的部分。
+#
+#  搜尋順序：-c 指定 > 執行目錄的 Satima.toml > Satima.py 所在目錄的 Satima.toml；
+#  類別檔先找這個檔所在的目錄，再找執行目錄與 Satima.py 所在目錄。
+#  路徑在 Windows 可寫 "D:/data/h9" 或 'D:\data\h9' (單引號字串不處理跳脫字元)。true / false 須小寫。
+#  英文註解的版本在 config-en/ (鍵與值相同，程式不會讀那個資料夾；想用的話複製出來蓋掉這幾個檔)。
+# ==================================================================
+
+[general]
+# 介面語言："zh" = 繁體中文、"en" = English；命令列 --lang 可臨時覆寫。
+# 只影響畫面上的訊息；產品與波段名稱、色表名稱、檔名、圖上的標註兩種語言都相同。
+language = "zh"
+
+# 以下目錄都可寫絕對路徑 (例如 "E:/png") 或相對路徑；
+# 相對路徑一律以 Satima.py 所在目錄 (第一層) 為準，與從哪裡執行無關，"" 或 "." = 該目錄本身。
+# 各類衛星可在自己的設定檔指到別處，各格式可用 [readers.<格式>.general] 個別指定；命令列 -d / -o 可臨時覆寫
+# (命令列上的相對路徑依一般慣例以執行時的目前目錄為準)。
+
+# 衛星資料所在目錄 (三類的資料可以放在一起：資料列表會依 [GEO]、[MW]、[PO] 分段)
+data_dir = "./data"
+
+# 圖片輸出目錄；可使用檔名欄位自動分資料夾，例如 "plot/{satellite}/{time:%Y%m%d}"
+output_dir = "./plot"
+
+# 色表 (.cmap) 與校正表目錄
+colormap_dir = "colormap"
+conversion_table_dir = "conversion_table"
+
+
+[map]
+# 地圖套件："basemap" 或 "cartopy" (衛星影像的取樣完全相同，只有底圖線條不同)
+backend = "basemap"
+# 海岸線/國界解析度：basemap 為 c / l / i / h / f (GSHHS)，cartopy 為 110m / 50m / 10m (Natural Earth)
+# 兩種寫法皆可，自動對應：c,l -> 110m；i -> 50m；h,f -> 10m (小範圍建議 h / 10m；全球範圍用 l，否則讀海岸線很慢)
+resolution = "i"
+# 投影：merc (麥卡托) / cyl (等距圓柱) / lcc (蘭伯特正形圓錐)；GEO 另有 fd (全圓盤，衛星視角；見 Satima-GEO.toml)
+# 麥卡托與 LCC 的地球模型一律為 WGS84 橢球，三類衛星同一範圍、同一大小的圖逐像素對齊。
+# 執行時會詢問投影，直接 Enter = 這裡的設定；ask_projection = false 則一律使用這裡的設定、不再詢問
+projection = "merc"
+ask_projection = true
+# 地圖範圍的輸入方式：
+#   "bounds" 問「南 北 西 東」，例如 20 27 117 124
+#   "center" 先問中心 (緯度 經度)，再問範圍 (中心往外的緯度、經度各幾度；只輸入一個 = 兩者相同)
+# 不論哪一種，輸入 4 個數字一律當成 南 北 西 東、2 個數字一律當成中心，所以兩種輸入法隨時都能用。
+# 極軌的中心時間與颱風眼溫度以中心點為準：輸入四邊時為範圍中點，想指定颱風中心就輸入 2 個數字。
+range_input = "bounds"
+# LCC 標準緯線 [緯度1, 緯度2]；[] = 依地圖範圍自動 (南北範圍的 1/6 與 5/6 處)
+lcc_parallels = []
+# LCC 中央經線 (度)；"auto" = 地圖範圍的中央
+lcc_central_longitude = "auto"
+
+
+[coastline]
+draw = true
+color = "white"
+linewidth = 0.2
+
+[borderline]
+draw = false
+color = "#FFFFFF"
+linewidth = 0.3
+
+[latlon]
+draw = false
+color = "#FFFFFF"
+linewidth = 0.1
+step = 1.0               # 經緯線間隔 (度)
+
+
+[image]
+# 決定圖片大小的方式 (三類衛星都適用；命令列 --mode 可臨時覆寫，也可以在類別檔或 [readers.<格式>.image] 個別指定)：
+#   "native"  原始解析度：地圖中央的一個像素 = 這個產品的原始解析度 (極軌、微波為原始取樣間距)。只輸出一張。
+#   "dpi"     依 dpi 輸出：每個 [[output.image]] (見 [output]) 輸出一張，像素數 = 英吋 x dpi。
+#             圖的英吋數照 matplotlib 預設 (6.4 x 4.8 英吋的圖、座標軸約 4.96 x 3.70 英吋；改 matplotlibrc 會跟著變)：
+#             地圖等比例放進座標軸的範圍後裁掉白邊，所以寬的範圍 1000 dpi 約 4960 像素寬，方形範圍約 3700 像素。
+#             不詢問圖片寬度，下面 size / max_size / min_size / min_scale 不使用。
+# 兩種模式的影像都是先取樣到輸出地圖的格點，不經 matplotlib 重新取樣 (不使用 pcolormesh)。
+mode = "native"
+
+# ---- 以下只在 mode = "native" 時使用 ----
+# "native"     = 依產品的原始解析度自動決定寬度 (執行時直接 Enter)
+# "x2" ~ "x8"  = 原始解析度的 2~8 倍 (執行時直接 Enter)：每個原始像素畫成約 NxN 的方塊
+# 以上兩種執行時都會詢問，可輸入寬度 (像素) 或 x2~x8 臨時覆寫
+# 或填固定寬度 (正整數，例如 2000)，就不再詢問
+size = "native"
+max_size = 8000          # 長邊的上限 (像素)；超過時改用放得下的最大整數倍，原始解析度也放不下才縮小
+# 寬度的下限 (像素)：範圍小、解析度粗 (例如紅外 2 km、微波) 時放大成整數倍，
+# 取寬度達到下限的最小倍數，且至少 min_scale 倍 (例如原始 1500 像素 -> x4 = 6000；357 -> x6 = 2142)，
+# 每個原始像素的大小才一致；避免小圖的海岸線與標註字太粗糙。執行時手動輸入的寬度不受此限制。
+min_size = 2000
+# 寬度不足 min_size 時至少放大的倍數 (1~8)；1 = 只取達到 min_size 的最小倍數。
+# 原始寬度已達 min_size 時不放大；仍受 max_size 限制。
+min_scale = 4
+# 填入檔名的 {suffix} (dpi 模式改用各 [[output.image]] 的 suffix)；留空 = 省略
+suffix = ""
+
+# ---- 兩種模式共用 ----
+background = "#222222"   # 無資料處 (太空、圖框外、掃描帶外) 的底色
+
+
+[memory]
+# 節省記憶體：輸出影像分條處理 (每一條取樣、合成、上色後即釋放)，結果與整張處理逐像素相同。false = 整張一次處理。
+low_memory = true
+# 多核心：同時計算的條數 (結果與單核心逐像素相同)
+#   "auto" = CPU 邏輯核心數 (最多 16)；1 = 不平行。每多一個執行緒約多用數百 MB 記憶體
+workers = "auto"
+
+
+[title]
+# 是否詢問圖片左下角的標題；false 則一律使用 default。標題也會填入檔名的 {title}。
+ask = false
+default = ""
+fontsize = 12
+family = "Arial"
+weight = "normal"
+family_nonascii = "Source Han Sans CN"     # 標題含中文時使用的字型
+weight_nonascii = "normal"
+box_alpha = 0.5
+box_pad = 4.0            # 文字到框邊的留白 (點)
+
+
+[annotation]
+# 圖片下方中央的文字；draw = false = 不加 (dpi 模式可在各 [[output.image]] 用 annotation = true / false 個別指定)
+# 可用欄位同檔名 (見 [output])，例：2025/09/22 0505Z    GCOM-W1 AMSR2 89V NRL
+draw = true
+text = "{time}    {satellite} {sensor} {band} {colorbar}"
+time_format = "%Y/%m/%d %H%MZ"
+upper = true             # 轉成大寫 (µm 維持小寫)
+# 字級與留白的單位是點。原始解析度模式以 5 吋寬的圖為準，dpi 模式以實際的英吋數為準，
+# 所以圖片不論多少像素，字與框占圖寬的比例都一樣。文字貼齊圖片下緣。
+fontsize = 6
+box_pad = 4.0            # 文字到框邊的留白 (點)
+family = "Courier New"
+weight = "bold"
+color = "black"
+box_color = "white"
+box_alpha = 0.7
+
+
+[output]
+# 檔名樣板 (不含副檔名)。可用欄位 (某一類衛星沒有的欄位留空)：
+#   {title} {satellite} {sensor} {band} {colorbar} {product} {time} {projection} {reader} {dpi} {suffix}
+#   GEO：{wavelength} (檔名中為 10.4um)、{area}；MW：{frequency}、{orbit}；PO：{res}
+# 空白的欄位會連同前面的分隔字元一起省略，例如沒有 colorbar、沒輸入 title、麥卡托、沒有 suffix 時：
+#   Himawari-9.AHI.BAND-03.202611080400Z.png
+# {time} 的格式見 time_format，也可以直接寫 {time:%Y%m%d_%H%M}；極軌、微波為掃描帶通過地圖範圍的時間。
+# {projection} 為地圖投影 CYL / LCC / FD (麥卡托為空)。
+# dpi 模式輸出多張時用 {suffix} 或 {dpi} 區分；樣板裡沒有這兩個欄位時，有 suffix 的圖會自動在檔名最後加上 .suffix。
+filename = "{title}.{satellite}.{sensor}.{band}.{colorbar}.{projection}.{time}.{suffix}"
+time_format = "%Y%m%d%H%MZ"
+format = "png"
+space = "_"              # 欄位值中的空白改成這個字元 (例如 "CWB NPP_VIIRS" -> "CWB_NPP_VIIRS")
+
+# 每個 [[output.image]] 輸出一張圖 (只用於 [image] mode = "dpi")：
+#   dpi        解析度
+#   suffix     填入檔名的 {suffix} (空字串 = 省略)
+#   annotation (可省略) 這張圖是否加下方的標註，省略時依 [annotation] draw
+[[output.image]]
+dpi = 1000
+suffix = ""
+
+[[output.image]]
+dpi = 500
+suffix = "500DPI"
+
+# 範例：再多輸出一張不含標註的 1000 dpi 圖
+# [[output.image]]
+# dpi = 1000
+# suffix = "clean"
+# annotation = false

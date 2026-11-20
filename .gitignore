@@ -1,0 +1,32 @@
+# 衛星原始資料與輸出圖檔（太大，不進版控；只保留空資料夾）
+data/*
+!data/.gitkeep
+plot/*
+!plot/.gitkeep
+
+# Python / Numba 快取
+__pycache__/
+*.pyc
+*.nbc
+*.nbi
+
+# Cython 編譯產物（.pyd 只適用編譯時的 Python 版本；需要時執行 python sensors/geo/build_vissr_nav_cy.py 重編）
+build/
+*.egg-info/
+*.pyd
+sensors/**/*.c
+
+# 舊版遺留、現行程式未使用的檔案
+colormap/old/
+colormap/Colormap.py
+colormap/__init__.py
+colormap/colormaps
+conversion_table/MFG/
+conversion_table/MTSAT/
+
+# 編輯器與系統檔
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.claude/

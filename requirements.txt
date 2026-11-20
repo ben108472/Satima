@@ -1,0 +1,25 @@
+# Satima 需要的套件 (Python 3.11 以上)。註解中的版本是 2026/11 測試時使用的版本。
+# 缺少某個套件時，程式只會略過用到它的格式。
+#
+# mpkit (讀 .cmap 色表) 不在 PyPI 上：需另外把 mpkit 資料夾複製到 Python 的 Lib\ 或 site-packages\。
+
+numpy          # 1.26.4
+scipy          # 1.17.1   PO 的最近鄰取樣 (KD-tree)、tie-point 內插
+matplotlib     # 3.5.2
+basemap        # 1.4.1    地圖 (或改用 cartopy：[map] backend = "cartopy")
+cartopy        # 0.22.0   GOES-R 全圓盤對齊原始像素需要
+pyproj         # 3.6.1
+h5py           # 3.16.0   HDF5：AHI 以外的多數格式
+netCDF4        # 1.6.5
+pandas         # 2.2.3    PO
+Pillow         # 10.1.0   GEO 的底圖
+
+# ---- 可省略 ----
+numba          # 0.60.0   有的話取樣、真實色、存檔快數倍
+pyspectral     # 0.14.3   GEO 真實色的 Rayleigh 校正
+pyorbital      #          GEO 真實色的太陽位置
+pyhdf          #          MODIS (HDF4)
+ephem          # 4.2.1    VIIRS DNB 月光反射率
+tifffile       #          GEO 城市燈光 / Blue Marble 底圖 (GeoTIFF)
+# pyPublicDecompWT        壓縮的 MSG HRIT (或在 [seviri] xrit_decompress 指定 EUMETSAT 的 xRITDecompress)
+# Cython                  GMS 導航的 cython 版 (python sensors/geo/build_vissr_nav_cy.py；預設用 numba，不需要)

@@ -1,0 +1,178 @@
+# ==================================================================
+#  Satima common config file (TOML, UTF-8): settings that apply to geostationary (GEO), microwave (MW) and polar-orbiting imager (PO) data alike
+#
+#  Each satellite family also has its own config file, which can override any section here:
+#    Satima-GEO.toml  geostationary satellites (true color, basemaps, infrared colormaps …)
+#    Satima-MW.toml   microwave (interpolation, PCT, RGB, colormaps …)
+#    Satima-PO.toml   polar-orbiting imagers (typhoon eye temperature, colormaps …)
+#  Precedence: built-in defaults < Satima.toml < Satima-<family>.toml < [readers.<format>] < command line.
+#  Each setting only needs to be written in one place; when the same key appears in both, the family file overrides this one. Anything not written uses the built-in default, so you can keep only the parts you want to change.
+#
+#  Search order: the file given with -c > Satima.toml in the working directory > Satima.toml in the directory of Satima.py;
+#  family files are looked for first in the directory of this file, then in the working directory and the directory of Satima.py.
+#  On Windows, paths can be written "D:/data/h9" or 'D:\data\h9' (single-quoted strings do not process escape characters). true / false must be lowercase.
+#  This is the English-commented template: the program only reads the files next to Satima.py, so to use these, copy them over the ones in the project root (keys and values are the same as the Chinese-commented files, so nothing else changes).
+# ==================================================================
+
+[general]
+# Interface language: "zh" = Traditional Chinese, "en" = English; --lang on the command line overrides it temporarily.
+# Only affects the on-screen messages; product and band names, colormap names, file names and the annotations on the image are the same in both languages.
+language = "zh"
+
+# All of the directories below can be absolute paths (e.g. "E:/png") or relative paths;
+# relative paths are always relative to the directory of Satima.py (the top level), regardless of where you run from; "" or "." = that directory itself.
+# Each satellite family can point elsewhere in its own config file, and each format can be set individually with [readers.<format>.general]; -d / -o on the command line override temporarily
+# (relative paths on the command line follow the usual convention: relative to the current directory at run time).
+
+# Directory holding the satellite data (data of all three families can be kept together: the data list is split into [GEO], [MW] and [PO] sections)
+data_dir = "./data"
+
+# Image output directory; file name fields can be used to sort into folders automatically, e.g. "plot/{satellite}/{time:%Y%m%d}"
+output_dir = "./plot"
+
+# Directories of the colormaps (.cmap) and the calibration tables
+colormap_dir = "colormap"
+conversion_table_dir = "conversion_table"
+
+
+[map]
+# Map package: "basemap" or "cartopy" (the sampling of the satellite image is exactly the same; only the basemap lines differ)
+backend = "basemap"
+# Coastline/border resolution: basemap uses c / l / i / h / f (GSHHS), cartopy uses 110m / 50m / 10m (Natural Earth)
+# Either notation works and is mapped automatically: c,l -> 110m; i -> 50m; h,f -> 10m (h / 10m recommended for small areas; use l for global areas, otherwise reading the coastlines is very slow)
+resolution = "i"
+# Projection: merc (Mercator) / cyl (equidistant cylindrical) / lcc (Lambert conformal conic); GEO also has fd (full disk, satellite view; see Satima-GEO.toml)
+# Mercator and LCC always use the WGS84 ellipsoid as the Earth model, so images of the same area and size from the three families align pixel for pixel.
+# The projection is asked at run time, plain Enter = the setting here; with ask_projection = false the setting here is always used without asking
+projection = "merc"
+ask_projection = true
+# How the map area is entered:
+#   "bounds" asks for "south north west east", e.g. 20 27 117 124
+#   "center" asks for the center first (latitude longitude), then the extent (degrees of latitude and of longitude outward from the center; a single number = the same for both)
+# Either way, 4 numbers are always taken as south north west east and 2 numbers always as a center, so both input methods can be used at any time.
+# For polar orbiters the center time and the typhoon eye temperature are based on the center point: when the four bounds are entered it is the midpoint of the area; to specify the typhoon center, enter 2 numbers.
+range_input = "bounds"
+# LCC standard parallels [latitude 1, latitude 2]; [] = automatic from the map area (at 1/6 and 5/6 of the north-south extent)
+lcc_parallels = []
+# LCC central meridian (degrees); "auto" = the center of the map area
+lcc_central_longitude = "auto"
+
+
+[coastline]
+draw = true
+color = "white"
+linewidth = 0.2
+
+[borderline]
+draw = false
+color = "#FFFFFF"
+linewidth = 0.3
+
+[latlon]
+draw = false
+color = "#FFFFFF"
+linewidth = 0.1
+step = 1.0               # spacing of the latitude/longitude lines (degrees)
+
+
+[image]
+# How the image size is determined (applies to all three families; --mode on the command line overrides temporarily; can also be set in a family file or per format in [readers.<format>.image]):
+#   "native"  native resolution: one pixel at the map center = the native resolution of this product (for polar orbiters and microwave, the native sampling interval). Only one image is output.
+#   "dpi"     output by dpi: one image per [[output.image]] (see [output]), pixel count = inches x dpi.
+#             The figure size in inches follows the matplotlib defaults (a 6.4 x 4.8 inch figure, axes about 4.96 x 3.70 inches; it changes if you edit matplotlibrc):
+#             the map is fitted into the axes area keeping its aspect ratio and the white margins are cropped, so a wide area at 1000 dpi is about 4960 pixels wide and a square area about 3700 pixels.
+#             The image width is not asked; size / max_size / min_size / min_scale below are not used.
+# In both modes the image is first sampled onto the grid of the output map and is not resampled by matplotlib (pcolormesh is not used).
+mode = "native"
+
+# ---- The following are used only when mode = "native" ----
+# "native"     = the width is determined automatically from the native resolution of the product (plain Enter at run time)
+# "x2" ~ "x8"  = 2~8 times the native resolution (plain Enter at run time): each native pixel is drawn as a block of about NxN
+# Both of the above still ask at run time; a width (pixels) or x2~x8 can be entered to override temporarily
+# Or give a fixed width (a positive integer, e.g. 2000) and it is no longer asked
+size = "native"
+max_size = 8000          # upper limit of the long side (pixels); when exceeded, the largest integer multiple that fits is used instead, and the image is shrunk only if even native resolution does not fit
+# Lower limit of the width (pixels): for a small area at coarse resolution (e.g. 2 km infrared, microwave) the image is enlarged by an integer multiple,
+# taking the smallest multiple whose width reaches the lower limit, and at least min_scale times (e.g. native 1500 pixels -> x4 = 6000; 357 -> x6 = 2142),
+# so that every native pixel has the same size; this keeps the coastlines and annotation text of small images from looking too coarse. A width entered manually at run time is not subject to this limit.
+min_size = 2000
+# Minimum enlargement factor (1~8) when the width is below min_size; 1 = only the smallest multiple that reaches min_size.
+# No enlargement when the native width already reaches min_size; still limited by max_size.
+min_scale = 4
+# Filled into {suffix} of the file name (dpi mode uses the suffix of each [[output.image]] instead); empty = omitted
+suffix = ""
+
+# ---- Shared by both modes ----
+background = "#222222"   # background color where there is no data (space, outside the image frame, outside the swath)
+
+
+[memory]
+# Memory saving: the output image is processed in strips (each strip is sampled, composited and colored, then released); the result is pixel-for-pixel identical to processing the whole image. false = process the whole image at once.
+low_memory = true
+# Multi-core: number of strips computed at the same time (the result is pixel-for-pixel identical to single core)
+#   "auto" = number of logical CPU cores (at most 16); 1 = not parallel. Each additional thread uses roughly a few hundred MB more memory
+workers = "auto"
+
+
+[title]
+# Whether to ask for the title at the lower-left corner of the image; false = always use default. The title is also filled into {title} of the file name.
+ask = false
+default = ""
+fontsize = 12
+family = "Arial"
+weight = "normal"
+family_nonascii = "Source Han Sans CN"     # font used when the title contains Chinese
+weight_nonascii = "normal"
+box_alpha = 0.5
+box_pad = 4.0            # padding between the text and the box edge (points)
+
+
+[annotation]
+# Text at the bottom center of the image; draw = false = none (in dpi mode each [[output.image]] can set annotation = true / false individually)
+# The available fields are the same as for the file name (see [output]), e.g.: 2025/09/22 0505Z    GCOM-W1 AMSR2 89V NRL
+draw = true
+text = "{time}    {satellite} {sensor} {band} {colorbar}"
+time_format = "%Y/%m/%d %H%MZ"
+upper = true             # convert to upper case (µm stays lower case)
+# Font size and padding are in points. Native-resolution mode is based on a 5-inch-wide figure, dpi mode on the actual size in inches,
+# so however many pixels the image has, the text and box take up the same proportion of the image width. The text sits flush with the bottom edge of the image.
+fontsize = 6
+box_pad = 4.0            # padding between the text and the box edge (points)
+family = "Courier New"
+weight = "bold"
+color = "black"
+box_color = "white"
+box_alpha = 0.7
+
+
+[output]
+# File name template (without extension). Available fields (fields that a satellite family does not have are left empty):
+#   {title} {satellite} {sensor} {band} {colorbar} {product} {time} {projection} {reader} {dpi} {suffix}
+#   GEO: {wavelength} (10.4um in file names), {area}; MW: {frequency}, {orbit}; PO: {res}
+# Empty fields are omitted together with the separator character in front of them, e.g. with no colorbar, no title entered, Mercator and no suffix:
+#   Himawari-9.AHI.BAND-03.202611080400Z.png
+# For the format of {time} see time_format; {time:%Y%m%d_%H%M} can also be written directly; for polar orbiters and microwave it is the time the swath passes over the map area.
+# {projection} is the map projection CYL / LCC / FD (empty for Mercator).
+# When dpi mode outputs several images, use {suffix} or {dpi} to tell them apart; when the template has neither field, images with a suffix automatically get .suffix appended at the end of the file name.
+filename = "{title}.{satellite}.{sensor}.{band}.{colorbar}.{projection}.{time}.{suffix}"
+time_format = "%Y%m%d%H%MZ"
+format = "png"
+space = "_"              # spaces in field values are replaced by this character (e.g. "CWB NPP_VIIRS" -> "CWB_NPP_VIIRS")
+
+# Each [[output.image]] outputs one image (used only with [image] mode = "dpi"):
+#   dpi        resolution
+#   suffix     filled into {suffix} of the file name (empty string = omitted)
+#   annotation (optional) whether this image gets the annotation at the bottom; when omitted, follows [annotation] draw
+[[output.image]]
+dpi = 1000
+suffix = ""
+
+[[output.image]]
+dpi = 500
+suffix = "500DPI"
+
+# Example: output one more 1000 dpi image without the annotation
+# [[output.image]]
+# dpi = 1000
+# suffix = "clean"
+# annotation = false

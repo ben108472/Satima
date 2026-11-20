@@ -1,0 +1,304 @@
+# ==================================================================
+#  Satima-GEO.toml: settings for geostationary satellites (GEO) (TOML, UTF-8)
+#
+#  The common settings (language, directories, map, coastlines, image size and mode, title, annotation, file name) are in Satima.toml;
+#  this file holds only the settings specific to geostationary satellites (GEO) and the items that should differ from the common settings (when the same key appears in both, this file takes precedence).
+#  Any section of the common settings can be overridden here; only the keys you want to change need to be written.
+#  The [readers.<format>.<section>] entries at the bottom can override further for a single format.
+#  Anything not written uses the program's built-in defaults (DEFAULTS in satima/core/config.py and satima/geo/config.py).
+# ==================================================================
+
+# ---- Items that differ from the common settings (Satima.toml) --------------
+[map]
+# GEO also has fd (full disk, satellite view), which adds one entry to the projection menu at run time:
+#   for fd the sub-satellite point and the satellite height are taken from the data, so no latitude/longitude range needs to be entered;
+#   for data in the standard geostationary projection (Himawari, GOES-R, etc.), output pixels correspond one-to-one to native pixels at native resolution.
+# Regional observations (target area, mesoscale, etc.) do not ask for a range; the whole image is used directly.
+# projection = "merc"
+
+[coastline]
+linewidth = 0.1
+
+[borderline]
+linewidth = 0.5
+
+[image]
+max_size = 25000          # upper limit of the long side at native resolution (pixels)
+# Multiples of the native resolution ([image] size = "x2"~"x8"):
+#   with interpolation = "nearest" and "x3"~"x4": each native pixel is drawn as a block of about 3x3~4x4, so every native pixel is visible and the values are unchanged,
+#   and the irregularity of the block sizes drops from about 25~45% to around 15%; the pixel count grows by the square of the multiple.
+#   When the full disk is aligned with the native pixels (Himawari, GK-2A, MTG, MTSAT, SEVIRI; GOES-R needs cartopy), native resolution is already one cell per
+#   native pixel and the multiple is not applied; GOES-R with basemap and the full disks of older satellites such as GMS and GOES-1~15 are not aligned and are still enlarged.
+# How values are taken when the output pixels are finer than or similar to the native pixels (e.g. 2 km infrared drawn in Mercator, high latitudes or obliquely viewed regions):
+#   "bilinear" bilinear interpolation: smooth edges (default)
+#   "nearest"  nearest neighbor: keeps the native pixel values, but some pixels are repeated irregularly, so the picture looks stair-stepped and tiled
+# Applies to single-band/colormap products and the nighttime infrared of GeoColor; when the output is more than two times coarser than the native resolution, block averaging is always used.
+# At full-disk native resolution (output pixels correspond one-to-one to native pixels) both give the same result.
+# The highest/lowest cloud-top temperatures are always computed from the native pixel values.
+interpolation = "nearest"
+
+[title]
+box_pad = 2             # padding between the text and the box edge (points)
+
+[annotation]
+# Available fields: {time} {satellite} {sensor} {band} {wavelength} {colorbar} {product} {area} {title} {reader} {projection}
+#   {band}       BAND-13 (Himawari, GOES, GK-2A), BAND-14 FDHSI / BAND-14 HRFI (MTG), TrueColor, TrueColor HRFI
+#   {wavelength} 10.4µm (empty for true color)
+#   {product}    {band}-{colorbar}, e.g. BAND-13-OTT
+# Example: 2026/11/08 0400Z    HIMAWARI-9 BAND-13 10.4µm BD
+text = "{time}    {satellite} {band} {colorbar}"
+
+
+# ---- GEO-only settings -----------------------------------------------------
+[visible]
+# Single-band visible / near-infrared (true color is not affected); processing order: solar zenith angle correction -> multiply by scale -> gamma
+gamma = false                    # square-root gamma brightening
+sun_zenith_correction = false    # divide by cos(solar zenith angle)
+scale = 1.0                      # the reflectance is multiplied by this factor before display (>1 brightens; display range 0~1, above 1 is white)
+# GOES-8~15: apply the NOAA post-launch calibration (the visible sensors degrade year by year in orbit; with the pre-launch coefficients alone the image is 15~80% too dark)
+#   GOES-11/12/13/15 use the STAR monthly correction values (conversion_table/GOES/GOES_Imager_Vis_OpCal.txt),
+#   GOES-8/10 use the OSPO linear degradation formula, GOES-14 a fixed x 1.0695 (MODIS comparison value from the post-launch test of 2009/12); GOES-9 has no official value and is not corrected
+post_launch_calibration = true
+# GMS-TAPE (GMS-1 tapes): visible sensor 2 failed, so 1 of every 4 scan lines is missing;
+#   true = fill it with the average albedo of the lines above and below (McIDAS AREA files are filled the same way); false = keep it as no data (horizontal lines in the background color)
+fill_missing_lines = true
+
+
+[seviri]
+# Calibration of MSG (Meteosat-8~11) SEVIRI (SEVIRI-HRIT / SEVIRI-NAT / SEVIRI-NC):
+#   "nominal" = the calibration coefficients in the file header (default, same as EUMETSAT and satpy)
+#   "gsics"   = infrared uses the MPEF GSICS correction coefficients in the file header instead (nominal is used when they are absent; the NetCDF format does not have these coefficients)
+#   "meirink" = visible VIS006 / VIS008 / IR_016 use the year-by-year degradation correction of Meirink 2023 instead
+calibration = "nominal"
+# Compressed HRIT (file names ending in -C_) needs pyPublicDecompWT (pip install pyPublicDecompWT);
+# when it is not installed, EUMETSAT's xRITDecompress executable can be specified, e.g. "C:/xRIT/xRITDecompress.exe" or "wsl /opt/xRITDecompress"
+xrit_decompress = ""
+
+
+[report]
+# For colormap-enhanced images, print the highest / lowest cloud-top temperature within the area
+max_tbb = true
+min_tbb = true
+
+
+[navigation]
+# Navigation of the older satellites: the JMA MGIVSR for GMS (GMS-VISSR, GMS-TAPE, GMS-AREA), the O&A model for GOES-8~15 (GOES-GVAR, GOES-AREA),
+# and the McIDAS 'GOES' spin-scan model for SMS / GOES-1~7 (GOES-PREGVAR)
+# How it is computed; the three options use the same algorithm and give the same result (difference < 1e-10 pixel), and every output pixel is computed exactly, point by point:
+#   "numba"  no compilation needed (compiled and cached automatically on first use)
+#   "cython" must be compiled once first: python sensors/build_vissr_nav_cy.py (needs Cython and a C compiler; must be recompiled after changing the Python version)
+#   "numpy"  needs no compiled package at all, slower
+engine = "numba"
+# Earth-edge correction (JMA MSC Technical Note No.26): corrects the navigation offset using the actual east and west Earth edges of each scan line (GMS-VISSR, GMS-TAPE)
+# Compared against the coastline of Western Australia: off by 2~5 km before the correction, about 1.5~3 km after it (JMA: within 1 infrared pixel)
+earth_edge_correction = true
+
+
+[truecolor]
+# CIRA SHAC True Color (Miller et al. 2016 BAMS, 2020 JTECH)
+# Hybrid green: G = (1-f) x G0.51 + f x NIR0.86; for ABI, G0.51 is the synthetic green
+# The CIRA paper gives about 0.07; compared against actual CIRA images (GOES-19, Himawari-9, GK-2A, MTG-I1), the vegetation tone is closest at 0.09
+hybrid_green_fraction = 0.09
+# ABI has no green band:
+#   "ahi"              CIRA method: G0.51 = 0.976 x blue^0.668 x red^0.347 fitted from AHI, then mixed with near-infrared (as above)
+#   [blue, red, NIR]   linear weights, with no further near-infrared mixing (old CIMSS [0.45, 0.45, 0.10]; satpy [0.465, 0.465, 0.07], land turns greenish)
+abi_green = [0.45, 0.45, 0.10]
+# Rayleigh scattering correction:
+#   "full"      subtract the path reflectance, then divide by the atmospheric transmittance and account for the spherical albedo (SeaDAS / CREFL; CIRA method); near-infrared is corrected too
+#   "subtract"  subtract the path reflectance only (old version: clouds yellowish, sea surface and land too dark)
+rayleigh_correction = "full"
+# Reduce the Rayleigh scattering correction over high clouds according to the 10.4 um brightness temperature (no reduction at 283 K, 70% reduction at 233 K)
+cloud_rayleigh_reduction = true
+# Use the same reduction factor for the transmittance and spherical albedo over high clouds as well (only this fraction of the atmosphere remains above the cloud top; requires the previous item and the "full" correction).
+#   false = old version: only the path reflectance is reduced while the transmittance still uses the whole atmosphere, so the blue of high clouds is over-amplified and the lower the sun, the bluer the cloud tops
+cloud_rayleigh_transmittance = true
+# Ozone amount for the ozone absorption correction (atm-cm; 0.30 = 300 DU, the global mean; about 0.26 in the tropics, up to 0.40 at mid-high latitudes in spring); 0 or false = no correction
+#   Ozone absorbs red the most and blue the least (about 0.082 / 0.040 / 0.011 per atm-cm at 0.64 / 0.51 / 0.47 um), so the longer the optical path, the bluer the clouds:
+#   at a solar zenith angle of 80° the red is about 15% lower. After the correction the hue of deep convective clouds hardly changes over solar zenith angles of 0~80°.
+ozone = false
+# When the output is finer than 1 km, sharpen with the 0.5 km red band by ratio sharpening
+sharpen = true
+# Upper limit and fade-out angle (degrees) of the solar zenith angle correction
+sza_limit = 88.0
+sza_max = 95.0
+# The terminator fades out to night between these two solar zenith angles (removes the purple band)
+terminator_fade_start = 80.0
+terminator_fade_end = 90.0
+# pyspectral atmosphere: us-standard / tropical / midlatitude summer / midlatitude winter /
+#                        subarctic summer / subarctic winter
+atmosphere = "us-standard"
+# How the per-pixel compositing is computed (same result, differing only in the order of floating-point operations):
+#   "numba"  default: fused into a single loop, several times faster on one core, and can use multiple cores ([memory] workers); the first run needs about 10~20 seconds to compile
+#   "numpy"  used automatically when numba is not available
+engine = "numba"
+# Relative gains of each satellite's visible bands (used only for true color / GeoColor; single-band images are not affected); false = no adjustment
+#   Syntax: { satellite = { band = factor } }; any satellite can be added, e.g. { Himawari-9 = { B01 = 0.94 }, GOES-19 = { C01 = 1.05 } }
+#   Blue/red and green/red of deep convective clouds (10.4 um < -55°C, where the visible should be close to white) after correction (solar zenith angle < 50°, with the two corrections above turned on):
+#     Himawari-9 1.06, 1.02 (the same at two observation times); Himawari-8 0.98, 0.98; GOES-19 0.95; GOES-16 (2019) 1.06
+#   With Himawari-9 multiplied by the factors below, both ratios are 1.00 (1.03, 1.01 at a solar zenith angle of 80°).
+#   When the two corrections above are turned off, change this back to { B01 = 0.92, B02 = 0.95 }.
+band_gain = { Himawari-9 = { B01 = 0.94, B02 = 0.98 } }
+# Tone curve (reflectance -> display brightness; also applies to the daytime layer of GeoColor):
+#   "cira"      the original formula of the CIRA paper (same as CIRA SLIDER): log10 of the reflectance over 0.025~1.2.
+#               The brightest output only reaches 241 (thick clouds about 212~230, grayish); reflectance below 0.025 always becomes 0,
+#               so 50~60% of the red-band pixels over clear-sky sea are 0 and the sea surface shows a blocky blue-black.
+#   "enhanced"  the same log curve with the midtones almost unchanged; only the two ends are changed: clouds are whiter with more gradation (brightest ~254), and gradation is kept in the dark parts of the sea surface.
+tone = "cira"
+# The following three items are used only when tone = "enhanced"
+white_point = 1.25       # reflectance that maps to full white (1.5 in the original CIRA formula); lower = brighter overall and whiter clouds (thick clouds about 230 at 1.1)
+shoulder = 0.95          # display values above this value (0~1) are compressed smoothly toward 1, so the brightest cloud tops do not turn into flat dead white; 1 = no compression
+shadow_toe = 0.006       # width of the smooth lower limit in the shadows (reflectance); larger = brighter and grayer sea surface, 0 = hard cutoff as in CIRA
+# Saturation (applies to both curves): 1 = no adjustment; around 1.25 vegetation and sea surface are more vivid. The boost tapers off in the highlights, so clouds are not tinted
+saturation = 1.0
+
+
+[geocolor]
+# The 2nd true color style, GeoColor (CIRA GeoColor V2.0, Miller et al. 2020 JTECH): daytime is the same as TrueColor;
+# at night 10.4 um high clouds (white), 10.4-3.9 um low clouds (light blue) and city lights are overlaid, and the terminator is blended according to the solar zenith angle.
+# When the 3.9 and 10.4 um bands are available, GeoColor is added to the RGB entries of the product menu (AHI, ABI, GK-2A, MTG).
+# City lights: VIIRS annual mean nighttime lights GeoTIFF (EOG VNL v2, nW/cm2/sr); a folder (the newest .tif is taken) or a file; relative paths are relative to the directory of Satima.py
+#   Requires GDAL (osgeo); empty string = no lights drawn. The 2024 500 m version is included (Zenodo 10.5281/zenodo.17294744, CC BY 4.0)
+nightlights = "nightlights"
+# The defaults below are taken from CIRA's current SLIDER images (after the 2025 update; GOES-19 and MTG, derived backwards pixel by pixel); the original values of the paper are given in parentheses
+# Day/night blending: cos(solar zenith angle) ramps from the lower limit (full night) to the upper limit (full day) and is then raised to a power
+#   [0.0, 0.18], 1.75 → SZA about 90°~79.6° (paper [0.1, 0.3], 1.5 → 84.3°~72.5°, the terminator darkens earlier)
+twilight_cos = [0.0, 0.18]
+twilight_power = 1.75
+# Brightness temperature range (K) of the high cloud layer: fully white at the cold end, fully transparent at the warm end; the cold end is raised by a further 20 K between latitudes 30° and 60° (paper [200, 280])
+ir_range = [178.0, 301.0]
+# Colors (0~1): low clouds, land without lights (dark purple), water (black)
+low_cloud_color = [0.55, 0.75, 0.98]
+land_color = [0.06, 0.03, 0.13]
+water_color = [0.0, 0.0, 0.0]
+
+
+[landsea]
+# Land/sea basemap CWA: grayscale clouds overlaid on land / ocean background colors (imitating the "infrared color cloud imagery" on the CWA website).
+# Menu: the 2nd level after choosing 1.GRAY as the colormap (GRAY basemaps: 1.NONE 2.CWA 3.LIGHTS 4.NASA 5.NICT);
+# for visible / near-infrared it is 1.NONE 2.CWA 3.NASA 4.NICT. Water vapor does not see the surface, so it has no basemap.
+# For the night-lights basemap LIGHTS see [nightmap]; for the Blue Marble basemaps NASA / NICT see [bluemarble] / [nictmap].
+# Compositing: output = a x grayscale + (1 - a) x background color; the background is two colors, land / ocean (blended by land fraction at the coast),
+# and the terrain texture comes from the infrared itself (the surface is colder in mountain areas). The defaults were derived backwards from the CWA website full-disk image of 2026-11-13 11:30 UTC compared with B13 of the same time.
+name = "CWA"                     # name in the menu and in {colorbar} of the file name
+# Land/sea mask: land fraction at 30 arc-seconds (about 0.93 km) rasterized from the GSHHS full-resolution coastline (built into basemap);
+# generated automatically when the file does not exist (about 30 seconds with numba). Relative paths are relative to the directory of Satima.py. Lakes use the ocean color.
+mask = "landsea/gshhs_f_30s.tif"
+land_color = [124, 145, 85]      # land (0~255)
+ocean_color = [31, 40, 118]      # ocean and lakes
+# Infrared grayscale: [brightness temperature °C, gray level 0~255], linearly interpolated between the nodes (differs from the -80~50°C of the ordinary IR GRAY)
+ir_gray = [[-95, 255], [-80, 235], [-60, 207], [-40, 176], [-20, 144], [0, 113], [20, 86], [80, 0]]
+# Cloud alpha a = clip((T0 - T) / (T0 - T1), 0, 1) ^ alpha_power: fully transparent at brightness temperature T0 and above, opaque at T1 and below
+ir_alpha = [26.1, -44.7]
+# Visible: the reflectance ramps from the 1st value (fully transparent) to the 2nd value (opaque); gray level = reflectance (the scale factor and gamma of [visible] also apply)
+vis_alpha = [0.10, 0.50]
+alpha_power = 0.8
+# Whether to draw coastlines, borders and latitude/longitude lines (according to the [coastline] [borderline] [latlon] settings)
+lines = false
+
+
+[nightmap]
+# Night-lights basemap LIGHTS (infrared only): clouds overlaid on city lights, done the same way as the nighttime layer of GeoColor (without the low clouds, which need 3.9 um):
+#   background = [geocolor] land_color / water_color (blended at the coast by the land fraction of the [landsea] mask), with the orange-yellow of sodium lamps where there are city lights
+#   output = N_IR x white + (1 - N_IR) x background, N_IR = 1 - N(brightness temperature)[IRmin, IRmax], the range being [geocolor] ir_range (the cold end is raised by 20 K with latitude)
+# The city lights file is [geocolor] nightlights; this product is skipped when it cannot be found.
+name = "LIGHTS"                  # name in the menu and in {colorbar} of the file name
+lines = false                    # whether to draw coastlines, borders and latitude/longitude lines
+
+
+[bluemarble]
+# Blue Marble basemap NASA (infrared and visible): white clouds, semi-transparent according to brightness temperature / reflectance, overlaid on NASA Blue Marble
+# (imitating the per-band views of the NICT Himawari-8 Real-time Web https://himawari8.nict.go.jp/).
+#   output = a x cloud_color + (1 - a) x Blue Marble; pixels without data show the basemap only
+# The opacity was derived backwards pixel by pixel from the B13 / B03 cloud images of the NICT website compared with the HSD of the same time (error < 0.5 color level).
+# The cloud settings here (cloud_color, ir_alpha, vis_alpha) are also used for the NICT basemap [nictmap].
+name = "NASA"                    # name in the menu and in {colorbar} of the file name
+# Basemap: NASA Blue Marble Next Generation 2004 (public domain, credit NASA Earth Observatory); darker, with snow on the high plateaus.
+# When the file does not exist it is downloaded automatically from NASA GIBS on first use (about 1 km, 67.5 MB, needs a network connection, about 6 minutes).
+image = "bluemarble/BlueMarble_NextGeneration_GIBS_1km.tif"
+cloud_color = [255, 255, 255]    # color of the clouds (0~255)
+# Infrared: two points [brightness temperature °C, opacity 0~255]; between the two points and at colder temperatures it is linear in the 10.4 µm radiance (not linear in brightness temperature),
+# limited to 0~255. NICT: fully transparent at 10.5°C and above, 230.5 (about 90%) at -80°C, about 235 at -84°C.
+ir_alpha = [[10.5, 0], [-80.0, 230.5]]
+# Visible: two points [reflectance, opacity 0~255], linear (after the [visible] processing). NICT: opacity = reflectance x 255,
+# with no solar zenith angle correction (= the [visible] defaults).
+vis_alpha = [[0.0, 0], [1.0, 255]]
+lines = false                    # whether to draw coastlines, borders and latitude/longitude lines
+
+
+[nictmap]
+# Blue Marble basemap NICT (infrared and visible): the cloud compositing is the same as [bluemarble], but the basemap is the one used by the NICT website,
+# NASA Blue Marble 2002 (land_shallow_topo: brighter land, a uniform blue-violet ocean, no snow on the high plateaus).
+# Compared with the basemap of the NICT website, the mean color difference of land and ocean is < 1 color level.
+name = "NICT"                    # name in the menu and in {colorbar} of the file name
+# When the file does not exist, the original NASA image (21600x10800 JPEG, 57.6 MB) is downloaded automatically from Wikimedia Commons on first use and converted
+# (about 1.85 km, 44.9 MB; needs a network connection, and the conversion temporarily needs about 1.5 GB of memory). Wikimedia sometimes rate-limits (HTTP 429); see docs/en/GEO.md.
+image = "bluemarble/BlueMarble_2002_land_shallow_topo_2km.tif"
+lines = false                    # whether to draw coastlines, borders and latitude/longitude lines
+
+
+[colormap]
+# Colormap menu: the order is the menu number (choosing 0 = output all)
+#   Infrared: 1 = grayscale GRAY (a basemap is then chosen, see [landsea] [nightmap] [bluemarble] [nictmap]); the first entry of ir is 2
+#   Water vapor: 1 = grayscale GRAY; the first entry of wv is 2
+#   file : .cmap file name in colormap_dir (without extension); the display range is taken from the colormap file itself
+#   mpl  : built-in matplotlib colormap (e.g. jet); must be used together with vmin / vmax (°C)
+#   name : name shown in the menu and in {colorbar} of the file name
+#   vmin / vmax can also be added to a file colormap to force a range
+ir = [
+    { name = "BD",    file = "bd" },
+    { name = "COLOR", file = "color" },
+    { name = "CC",    file = "cc" },
+    { name = "RAMMB", file = "rammb" },
+    { name = "NHC",   file = "nhc" },
+    { name = "OTT",   file = "ott" },
+    { name = "RBTOP", file = "rbtop" },
+    { name = "AVN",   file = "avn" },
+    { name = "RB",    file = "rb" },
+    { name = "MB",    file = "mb" },
+    { name = "CA",    file = "ca" },
+    { name = "CWBM",  file = "cwbm" },
+]
+
+# Water vapor channels
+wv = [
+    { name = "NRL",  file = "nrl" },
+    { name = "SSD",  file = "ssd" },
+    { name = "NOAA", file = "noaa" },
+]
+
+
+[readers.AHI-HSD.truecolor] #bluish-tone settings
+cloud_rayleigh_transmittance = true #set false if you want the clouds blue
+ozone = false
+band_gain = { Himawari-9 = { B01 = 0.95, B02 = 0.95 } }
+
+[readers.ABI-NC.truecolor] #bluish-tone settings
+cloud_rayleigh_transmittance = true #set false if you want the clouds blue
+ozone = 0.3
+#band_gain = { Himawari-9 = { B01 = 0.95, B02 = 0.95 } }
+
+# ==================================================================
+#  Per-format settings: [readers.<format name>.<section name>] can override any section above and applies only to that format
+#  Format name = the script file name in sensors/geo/ (python Satima.py --list shows them):
+#    AHI-HSD (Himawari-8/9), ABI-NC (GOES-16~19), AMI-NC (GK-2A), FCI-NC (MTG-I), MTSAT-HRIT (MTSAT-1R/2),
+#    MI-HDF (COMS-1), GMS-VISSR (GMS-1~5, GOES-9), GMS-TAPE (GMS-1 tape images), GMS-AREA (GMS McIDAS AREA),
+#    GOES-GVAR (GOES-8~15 raw GVAR: NOAA CLASS / NSMC), GOES-AREA (GOES-8~15 McIDAS AREA),
+#    GOES-PREGVAR (McIDAS AREA of SMS-1/2, GOES-1~7 VISSR / VAS),
+#    SEVIRI-HRIT / SEVIRI-NAT / SEVIRI-NC (MSG: Meteosat-8~11), MVIRI-FCDR / MVIRI-NC (MFG: Meteosat-2~7)
+# ==================================================================
+
+# Example: data of each satellite in a different folder, output to different folders
+# [readers.AHI-HSD.general]
+# data_dir = "D:/data/himawari"
+# output_dir = "D:/png/himawari"
+#
+# [readers.ABI-NC.general]
+# data_dir = "D:/data/goes"
+#
+# Example: use satpy's green weights for the GOES true color
+# [readers.ABI-NC.truecolor]
+# abi_green = [0.465, 0.465, 0.07]
+
+# MTSAT visible: the nominal albedo of HRIT is too dark (sensor degradation, not divided by the solar zenith angle); multiplied by 1.4 to brighten, as in the old version
+[readers.MTSAT-HRIT.visible]
+scale = 1.4

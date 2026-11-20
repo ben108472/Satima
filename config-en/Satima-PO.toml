@@ -1,0 +1,105 @@
+# ==================================================================
+#  Satima-PO.toml: settings for polar-orbiting imagers (PO) (TOML, UTF-8)
+#
+#  The common settings (language, directories, map, coastlines, image size and mode, title, annotation, file name) are in Satima.toml;
+#  this file holds only the settings specific to polar-orbiting imagers (PO) and the items that should differ from the common settings (when the same key appears in both, this file takes precedence).
+#  Any section of the common settings can be overridden here; only the keys you want to change need to be written.
+#  The [readers.<format>.<section>] entries at the bottom can override further for a single format.
+#  Anything not written uses the program's built-in defaults (DEFAULTS in satima/core/config.py and satima/po/config.py).
+# ==================================================================
+
+# ---- Items that differ from the common settings (Satima.toml) --------------
+[general]
+# Warn about memory use when the latitude / longitude extent (half-width outward from the center) exceeds this value; 0 = no warning
+range_warning = 20
+
+[map]
+range_input = "center"   # the center is asked first, then the extent (as in the original Satima-PO; 4 numbers are still taken as south north west east)
+
+[coastline]
+color = "#00BB00"
+linewidth = 0.5
+
+[image]
+# Native resolution = the sampling interval of the data drawn this time, measured from the latitude/longitude (the finer of the along-scan / along-track intervals within the area, e.g. 0.375 km at the sub-satellite point for the VIIRS I channels);
+# each pixel takes the nearest sample point (values are not interpolated).
+max_size = 50000         # upper limit of the long side (pixels)
+
+[title]
+ask = true               # the former Picname: asked at run time, drawn at the lower-left corner of the image and filled into {title} of the file name
+
+
+# ---- PO-only settings ------------------------------------------------------
+[swath]
+# Very short granules (VIIRS about 85 seconds, METimage about 1 minute per file) are always joined automatically into one entry; the remarks column of the data list shows the number of files and the number of missing files.
+# Long files of a full / half orbit each get their own row (AVHRR reads one file at a time and is never merged); when several rows contiguous in time are selected at once they are merged into one image: "ask" = ask, true = merge directly, false = draw each separately
+merge = "ask"
+merge_gap = 600.0        # two files count as the same segment when the gap between them is within this many seconds (two passes over the same place are at least one orbit apart, about 100 minutes)
+
+[eyetemp]
+# Infrared channels: print the highest brightness temperature within radius_deg (degrees) of the center point
+enable = true
+radius_deg = 0.5
+# Additionally print the old-style warm pixel counts (number of pixels warmer than 9~24°C)
+legacy_counts = false
+
+
+[colormap]
+# Colormap menu: the order is the menu number (starting from 1; choosing 0 = output all)
+#   file : .cmap file name in colormap_dir (without extension); the display range is taken from the colormap file itself
+#   mpl  : built-in matplotlib colormap (e.g. gray_r); must be used together with vmin / vmax
+#   name : name shown in the menu and in {colorbar} of the file name
+#   vmin / vmax can also be added to a file colormap to force a range
+ir = [
+    { name = "BW",            mpl = "gray_r", vmin = -80.0, vmax = 50.0 },
+    { name = "BD",            file = "bd" },
+    { name = "CycloneCenter", file = "cc" },
+    { name = "RBTOP",         file = "rbtop" },
+    { name = "CWB NPP_VIIRS", file = "cwbm" },
+    { name = "NRLCOLOR",      file = "color" },
+    { name = "NHC",           file = "nhc" },
+    { name = "RAMMB",         file = "rammb" },
+    { name = "OTT",           file = "ott" },
+    { name = "AVN",           file = "avn" },
+    { name = "RB",            file = "rb" },
+    { name = "MB",            file = "mb" },
+    { name = "CA",            file = "ca" },
+    # { name = "OTT-2",       file = "ott2" },
+]
+
+# Water vapor channels (MODIS B27/B28, METimage VII-33/34)
+wv = [
+    { name = "BW",   mpl = "gray_r", vmin = -80.0, vmax = 50.0 },
+    { name = "NRL",  file = "nrl" },
+    { name = "SSD",  file = "ssd" },
+    { name = "NOAA", file = "noaa" },
+]
+
+
+# ==================================================================
+#  Per-format settings: [readers.<format name>.<section name>] can override any section above and applies only to that format
+#  Format name = the script file name in sensors/po/ (python Satima.py --list shows them)
+# ==================================================================
+
+# The original OLCI and SGLI scripts used a white background
+[readers.OLCI-SAFE.image]
+background = "white"
+
+[readers.SGLI-HDF5.image]
+background = "white"
+
+# Example: data of each satellite in a different folder, output to different folders
+# [readers.VIIRS-HDF5.general]
+# data_dir = "D:/data/viirs"
+# output_dir = "D:/png/viirs"
+#
+# [readers.MODIS-HDF4.general]
+# data_dir = "D:/data/modis"
+#
+# Example: only one particular format uses native-resolution mode
+# [readers.VIIRS-HDF5.image]
+# mode = "native"
+#
+# Example: a different coastline color for one particular format
+# [readers.AVHRR-NAT.coastline]
+# color = "yellow"

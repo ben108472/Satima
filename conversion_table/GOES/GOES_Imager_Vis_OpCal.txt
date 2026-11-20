@@ -1,0 +1,270 @@
+Updating content for previous page: GOES_Imager_Vis_OpCal.php
+
+Table 2: History of Post-Launch operational calibration coefficients for the GOES Imager visible channel of currently-operational satellites
+
+The correction values in Table 1 are to be used on or after the second Tuesday 
+of the month following the coefficient generation month (refer to the example 
+below). They are considered optimal on the fourth Tuesday of the month following 
+the coefficient generation month.
+
+=================================
+
+Coefficient Generation      CORRECTION(C) for the following month (see note above)
+Month                       GOES-11         GOES-12         GOES-13         GOES-15
+--------------------------------------------------------------------------------------------
+Aug. 2026                  -               -               -               1.872
+July. 2026                  -               -               -               1.869
+June. 2026                  -               -               -               1.864
+May. 2026                   -               -               -               1.861
+Apr. 2026                   -               -               -               1.857
+Mar. 2026                   -               -               -               1.854
+Feb. 2026                   -               -               -               1.849
+Jan. 2026                   -               -               -               1.844
+Dec. 2025                   -               -               -               1.841
+Nov. 2025                   -               -               -               1.836
+Oct. 2025                   -               -               -               1.830
+Sep. 2025                   -               -               -               1.826
+Aug. 2025                   -               -               -               1.822
+Jul. 2025                   -               -               -               1.818
+Jun. 2025                   -               -               -               1.815
+May. 2025                   -               -               -               1.812
+Apr. 2025                   -               -               -               1.807
+Mar. 2025                   -               -               -               1.802
+Feb. 2025                   -               -               -               1.797
+Jan. 2025                   -               -               -               1.792
+Dec. 2024                   -               -               -               1.789
+Nov. 2024                   -               -               -               1.789
+Sep. 2024                   -               -               -               1.754**
+Aug. 2024                   -               -               -               1.754**
+Jul. 2024                   -               -               -               1.754**
+Jun. 2024                   -               -               -               1.754**
+May. 2024                   -               -               -               1.754**
+Apr. 2024                   -               -               -               1.754**
+Mar. 2024                   -               -               -               1.754**
+Feb. 2024                   -               -               -               1.754**
+Jan. 2024                   -               -               -               1.754**
+Dec. 2023                   -               -               -               1.754
+Nov. 2023                   -               -               -               1.736
+Oct. 2023                   -               -               1.672***        -
+Sep. 2023                   -               -               1.668***        -
+Aug. 2023                   -               -               1.664***        -
+Jul. 2023                   -               -               1.660***        -
+Jun. 2023                   -               -               1.656***        -
+May. 2023                   -               -               1.652***        -
+Apr. 2023                   -               -               1.647***        -
+Mar. 2023                   -               -               1.644***        -
+Feb. 2023                   -               -               1.639***        -
+Jan. 2023                   -               -               1.635***        -
+Dec. 2022                   -               -               1.631***        -
+Nov. 2022                   -               -               1.626***        -
+Oct. 2022                   -               -               1.621***        -
+Sep. 2022                   -               -               1.617***        -
+Aug. 2022                   -               -               1.614***        -
+Jul. 2022                   -               -               1.610***        -
+Jun. 2022                   -               -               1.606***        -
+May 2022                    -               -               1.603***        -
+Apr. 2022                   -               -               1.597***        -
+Mar. 2022                   -               -               1.591***        -
+Feb. 2022                   -               -               1.585***        -
+Jan. 2022                   -               -               1.582***        -
+Dec. 2021                   -               -               1.578***        -
+Nov. 2021                   -               -               1.573***        -
+Oct. 2021                   -               -               1.567***        -
+Sep. 2021                   -               -               1.564***        -
+Aug. 2021                   -               -               1.561***        -
+Jul. 2021                   -               -               1.557***        -
+Jun. 2021                   -               -               1.554***        -
+May 2021                    -               -               1.546***        -
+Apr. 2021                   -               -               1.541***        -
+Mar. 2021                   -               -               1.536***        -
+Feb. 2021                   -               -               1.532***        -
+Jan. 2021                   -               -               1.527***        -
+Dec. 2020                   -               -               1.527***        -
+Nov. 2020                   -               -               1.523***        -
+Oct. 2020                   -               -               1.516***        -
+Feb. 2020                   -               -               -               1.650
+Jan. 2020                   -               -               -               1.645
+Dec. 2019                   -               -               -               1.640
+Nov. 2019                   -               -               -               1.635
+Oct. 2019                   -               -               -               1.630
+Sep. 2019                   -               -               -               1.624
+Aug. 2019                   -               -               -               1.619
+Jul. 2019                   -               -               -               1.615
+Jun. 2019                   -               -               -               1.609
+May 2019                    -               -               -               1.604
+Apr. 2019                   -               -               -               1.600
+Mar. 2019                   -               -               -               1.594
+Feb. 2019                   -               -               -               1.589
+Jan. 2019                   -               -               -               1.585
+Dec. 2018                   -               -               -               1.579
+Nov. 2018                   -               -               -               1.575
+Oct. 2018                   -               -               -               1.570
+Sep. 2018                   -               -               -               1.565
+Aug. 2018                   -               -               -               1.560
+Jul. 2018                   -               -               -               1.556
+Jun. 2018                   -               -               -               1.550
+May 2018                    -               -               -               1.546
+Apr. 2018                   -               -               -               1.540
+Mar. 2018                   -               -               -               1.536
+Feb. 2018                   -               -               -               1.531
+Jan. 2018                   -               -               -               1.527
+Dec. 2017                   -               -               1.439           1.521
+Nov. 2017                   -               -               1.435           1.517
+Oct. 2017                   -               -               1.432           1.513
+Sep. 2017                   -               -               1.428           1.507
+Aug. 2017                   -               -               1.424           1.503
+Jul. 2017                   -               -               1.420           1.498
+Jun. 2017                   -               -               1.417           1.493
+May 2017                    -               -               1.414           1.489
+Apr. 2017                   -               -               1.409           1.484
+Mar. 2017                   -               -               1.406           1.479
+Feb. 2017                   -               -               1.403           1.475
+Jan. 2017                   -               -               1.402           1.474
+Dec. 2016                   -               -               1.398           1.469
+Nov. 2016                   -               -               1.394           1.465
+Oct. 2016                   -               -               1.391           1.460
+Sep. 2016                   -               -               1.387           1.455
+Aug. 2016                   -               -               1.384           1.450
+Jul. 2016                   -               -               1.379           1.448
+Jun. 2016                   -               -               1.375           1.442
+May 2016                    -               -               1.372           1.438
+Apr. 2016                   -               -               1.366           1.436
+Mar. 2016                   -               -               1.363           1.432
+Feb. 2016                   -               -               1.360           1.427
+Jan. 2016                   -               -               1.350           1.423
+Dec. 2015                   -               -               1.347           1.419
+Nov. 2015                   -               -               1.344           1.415
+Oct. 2015                   -               -               1.338           1.418
+Sep. 2015                   -               -               1.335           1.413
+Aug. 2015                   -               -               1.332           1.409
+Jul. 2015                   -               -               1.328           1.404
+Jun 2015                    -               -               1.325           1.399
+May 2015                    -               -               1.322           1.394
+Apr. 2015                   -               -               1.323           1.398
+Mar. 2015                   -               -               1.320           1.393
+Feb. 2015                   -               -               1.316           1.387
+Jan. 2015                   -               -               1.314           1.382
+Dec. 2014                   -               -               1.312           1.378
+Nov. 2014                   -               -               1.308           1.371
+Oct. 2014                   -               -               1.305           1.366
+Sep. 2014                   -               -               1.302           1.362
+Aug. 2014                   -               -               1.300           1.357
+July 2014                   -               -               1.298           1.356
+June 2014                   -               -               1.296           1.355**
+May 2014                    -               -               1.293           1.355
+Apr. 2014                   -               -               1.293           1.354
+Mar. 2014                   -               -               1.291           1.354
+Feb. 2014                   -               -               1.290           1.350**
+Jan. 2014                   -               -               1.289           1.350
+Dec. 2013                   -               -               1.286           1.348
+Nov. 2013                   -               -               1.283           1.341
+Oct. 2013                   -               -               1.281           1.335
+Sep. 2013                   -               -               1.277****       1.328****
+Aug. 2013                   -               -               1.274           1.319
+Jul. 2013                   -               -               1.272           1.314
+Jun. 2013                   -               -               1.268           1.312
+May 2013                    -               -               1.265           1.307
+Apr. 2013                   -               -               1.261           1.303
+Mar. 2013                   -               -               1.260           1.299
+Feb. 2013                   -               -               1.258           1.296
+Jan. 2013                   -               -               1.255           1.288
+Dec. 2012                   -               -               1.251           1.285
+Nov. 2012                   -               -               1.247           1.282
+Oct. 2012                   -               -               1.245           1.272
+Sep. 2012                   -               -               1.240           1.265
+Aug. 2012                   -               -               1.237           1.253
+Jul. 2012                   -               -               1.233           1.240
+Jun. 2012                   -               -               1.229           1.230
+May 2012                    -               -               1.227           1.230
+Apr. 2012                   -               -               1.224           1.225**
+Mar. 2012                   -               -               1.223           1.225**
+Feb. 2012                   -               -               1.222           1.225**
+Jan. 2012                   -               -               1.220           1.225**
+Dec. 2011                   -               -               1.214           1.225
+Nov. 2011                   -               -               1.209           1.160
+Oct. 2011                   1.372           -               1.203           -
+Sep. 2011                   1.367           -               1.199           -
+Aug. 2011                   1.365           -               1.194           -
+Jul. 2011                   1.361           -               1.192           -
+Jun. 2011                   1.358           -               1.186           -
+May 2011                    1.356           -               1.181           -
+Apr. 2011                   1.352           -               1.175           -
+Mar. 2011                   1.350           -               1.172           -
+Feb. 2011                   1.347           -               1.172           -
+Jan. 2011                   1.345           -               1.166           -
+Dec. 2010                   1.341           -               1.164           -
+Nov. 2010                   1.338           -               1.153           -
+Oct. 2010                   1.318           -               1.144           -
+Sep. 2010                   1.312           -               1.133           -
+Aug. 2010                   1.308           -               1.143           -
+Jul. 2010                   1.304           -               1.149           -
+Jun. 2010                   1.302*          -               1.140*          -
+May 2010                    1.299*          -               1.130*          -
+Apr. 2010                   1.296*          -               1.125           -
+Mar. 2010                   1.311           1.525           -               -
+Feb. 2010                   1.307           1.519           -               -
+Jan. 2010                   1.303           1.513           -               -
+Dec. 2009                   1.299           1.507           -               -
+Nov. 2009                   1.295           1.500           -               -
+Oct. 2009                   1.291           1.495           -               -
+Sep. 2009                   1.287           1.486           -               -
+Aug. 2009                   1.283           1.482           -               -
+Jul. 2009                   1.279           1.476           -               -
+Jun. 2009                   1.275           1.470           -               -
+May 2009                    1.271           1.464           -               -
+Apr. 2009                   1.268           1.458           -               -
+Mar. 2009                   1.264           1.452           -               -
+Feb. 2009                   1.260           1.447           -               -
+Jan. 2009                   1.256           1.441           -               -
+Dec. 2008                   1.252           1.435           -               -
+Nov. 2008                   1.248           1.429           -               -
+Oct. 2008                   1.245           1.423           -               -
+Sep. 2008                   1.241           1.417           -               -
+Aug. 2008                   1.237           1.412           -               -
+Jul. 2008                   1.233           1.406           -               -
+Jun. 2008                   1.229           1.400           -               -
+May 2008                    1.226           1.394           -               -
+Apr. 2008                   1.222           1.389           -               -
+Mar. 2008                   1.218           1.383           -               -
+Feb. 2008                   1.215           1.378           -               -
+Jan. 2008                   1.211           1.372           -               -
+Dec. 2007                   1.198           1.366           -               -
+Nov. 2007                   1.195           1.361           -               -
+Oct. 2007                   1.192           1.355           -               -
+Sep. 2007                   1.189           1.350           -               -
+Aug. 2007                   1.186           1.344           -               -
+
+
+
+=================================
+
+*: This post-launch calibration coefficient was derived from 
+the GOES-15 and Terra MODIS collocation cloud pixels acquired 
+on Y10D228, Y10D244, Y10D248, Y10D253, Y10D273, Y10D276, Y10D278, 
+Y10D285, Y10D289, and Y10D294. The coefficient shown is the 
+average coefficient for the Y10D228 to Y10D294 time period (the 
+C = α*exp(bt) equation was not used).
+
+**: This coefficient was calculated for the time period from Dec. 
+6, 2011, when the satellite became operational as GOES-West, to 
+Dec. 13, 2011, when the regular December update of the correction 
+coefficient in GVAR occurs. It is optimal for Dec. 6th, 2011.
+
+***: To prevent confusion, it has been decided that STAR will 
+only publish correction coefficients that are the same or greater 
+than the correction coefficient from the previous month. So, if 
+the α and b values provided in the table are such that the 
+resulting coefficient would be smaller than the previous month's, 
+then the published coefficient will be the same as the previous 
+month's. Note that this will cause the α and b values in those 
+months to not yield the correction value shown. Please see this 
+document for more information.
+
+Please note that the GOES-15 was also drifted to 61.5°E on Oct. 
+2023 and was renamed as EWS-G2. The coefficients from November 
+2023 onward are derived from the NOAA-20 Visible Infrared 
+Imaging Radiometer Suite (VIIRS).
+
+(For the details of the methodology, please see: 
+"Post-launch calibration of GOES Imager visible channel using 
+MODIS" by X. Wu and S. Sun, 2005, SPIE, Vol. 5882, doi:10.1117/12.615401)

@@ -1,0 +1,177 @@
+# ==================================================================
+#  Satima-MW.toml: settings for microwave (MW) (TOML, UTF-8)
+#
+#  The common settings (language, directories, map, coastlines, image size and mode, title, annotation, file name) are in Satima.toml;
+#  this file holds only the settings specific to microwave (MW) and the items that should differ from the common settings (when the same key appears in both, this file takes precedence).
+#  Any section of the common settings can be overridden here; only the keys you want to change need to be written.
+#  The [readers.<format>.<section>] entries at the bottom can override further for a single format.
+#  Anything not written uses the program's built-in defaults (DEFAULTS in satima/core/config.py and satima/mw/config.py).
+# ==================================================================
+
+# ---- Items that differ from the common settings (Satima.toml) --------------
+[map]
+range_input = "center"   # microwave is usually centered on the typhoon: the center is asked first, then the extent (4 numbers are still taken as south north west east)
+
+# [image]
+# Microwave sampling is very coarse; at the native sampling interval the width is usually far below min_size, so the image is enlarged automatically (for the rules see [image] in Satima.toml).
+# For maps of global extent change [map] resolution in Satima.toml to "l", otherwise basemap reads the coastlines very slowly.
+
+
+# ---- MW-only settings ------------------------------------------------------
+[swath]
+# Sampling (interpolation) method -- microwave sampling is very coarse, and drawn directly it looks blocky (see "Interpolation" in docs/en/MW.md):
+#   "gauss"     Gaussian distance weighting (the NRL GeoIPS approach): each pixel is the weighted average of the surrounding sample points according to actual distance; default.
+#               Equally smooth in every direction, so instruments whose sampling intervals differ greatly between the two directions (WSF-M MWI, GMI…) do not show jagged edges either;
+#               the price is that the resolution drops to that of the coarser direction and single-point extremes are flattened
+#   "cubic"     cubic interpolation in the index space of the swath (slope-limited): keeps the detail along the scan direction,
+#               but for instruments with asymmetric sampling intervals, diagonal eyewalls and rainbands look jagged
+#   "bilinear"  bilinear interpolation in index space
+#   "nearest"   interpolation off: each sample point is drawn as one block, so what you see is the raw sampling
+interpolation = "gauss"
+
+# σ of gauss (weight = exp(-distance² / σ²), same as pyresample); the larger, the smoother:
+#   "x0.7"  0.7 times the sampling interval of the coarser direction at that location (default; "x0.3"~"x3" can be written). Adjusts automatically with instrument and channel:
+#           MWI about 10.6 km, GMI 9 km, SSMIS 91 GHz 9 km, AMSR 89 GHz (A/B merged) 3.5 km.
+#           "x0.5" is sharper, but narrow rainbands crossing the scan lines obliquely start to break up into separate dots
+#   10      a fixed number of kilometers. NRL uses 10 for its 89 GHz, PCT and RGB products, and 25 for the single channels at 19 / 37 GHz
+gauss_sigma = "x0.5"
+
+# The 89 GHz of AMSR2 / AMSR3 has two sets of scans, A and B (each 10 km along track):
+#   true  merged into one channel 89V / 89H; the along-track sampling becomes about 5 km
+#   false listed separately as 89V-A, 89V-B, 89H-A, 89H-B
+merge_ab = true
+
+# When one selection includes several files of the same satellite and instrument that are contiguous in time (NASA near-real-time L1C is one file per 10 minutes, JAXA L1B one file per half orbit),
+# they are joined and drawn as one image: "ask" = ask, true = merge directly, false = draw each separately
+merge = "ask"
+merge_gap = 120.0        # files count as contiguous when the gap from the end of one file to the start of the next is within this many seconds
+
+# Quality flag (Quality) of NASA L1C / 1B. PPS has already set brightness temperatures with serious errors (negative values) to no data, so normally nothing more needs to be done (false).
+# true = sample points with a negative flag are not used at all. Note that the flag is "shared by one group of channels": if just one of the channels fails, the whole group is negative,
+# so setting true turns the healthy channels into no data as well (F18 SSMIS 150 GHz failure -> 183 GHz is gone too;
+# NOAA-15 AMSU-B 183±3 failure in 2008 -> 89 and 150 GHz are gone too)
+mask_bad_quality = false
+# When the fraction of the map covered by the swath is below this value it is treated as not passing over, and is skipped
+min_coverage = 0.002
+
+
+[gray]
+# Display range (K) of GRAY (grayscale) in the menu; with reverse = true, cold (strong ice-crystal scattering) is white
+range = [150.0, 300.0]
+reverse = true
+
+
+[pct]
+# θ of PCT (polarization-corrected brightness temperature) = (1 + θ) x V - θ x H, by frequency:
+#   the defaults are Cecil and Chronis (2018): 10 GHz 1.5, 19 GHz 1.4, 37 GHz 1.15, 85~91 GHz 0.7
+#   another commonly used value for 85 GHz is 0.818 from Spencer et al. (1989); NRL uses 1.181 for 37 GHz (Lee et al. 2002)
+tb10 = 1.5
+tb19 = 1.4
+tb37 = 1.15
+tb89 = 0.7
+
+
+# ------------------------------------------------------------------
+# RGB composites. Each section [rgb.<name>] is one product in the menu:
+#   band   which frequency's V / H to use: "tb37" (30~40 GHz), "tb89" (80~95 GHz), "tb19", "tb10"
+#   theta  θ of the PCT for this recipe (omitted = the value in [pct])
+#   red / green / blue: source = "pct" / "v" / "h", range = [min, max] (K) stretched linearly to 0~1,
+#                       inverse = true inverts, gamma (default 1.0)
+#   enabled = false removes a recipe from the menu
+# To add a recipe of your own, just add another section in the same way.
+# ------------------------------------------------------------------
+# NRL 37 GHz color composite (Lee et al. 2002; values taken from pmw_color37 of NRL GeoIPS):
+# sea surface dark green, low-level cloud and rain cyan, deep convection pink
+[rgb.NRL-37]
+band = "tb37"
+theta = 1.181
+red = { source = "pct", range = [260.0, 280.0], inverse = true }
+green = { source = "v", range = [180.0, 300.0] }
+blue = { source = "h", range = [160.0, 300.0] }
+
+# The 37 GHz color composite described on the RAMMB/CIRA TC Realtime web page
+[rgb.RAMMB-37]
+band = "tb37"
+red = { source = "pct", range = [260.0, 280.0], inverse = true }
+green = { source = "v", range = [160.0, 300.0] }
+blue = { source = "h", range = [180.0, 310.0] }
+
+# NRL 89 GHz color composite (pmw_color89 of NRL GeoIPS): deep convection red
+[rgb.NRL-89]
+band = "tb89"
+theta = 0.818
+red = { source = "pct", range = [220.0, 310.0], inverse = true }
+green = { source = "h", range = [240.0, 300.0] }
+blue = { source = "v", range = [270.0, 290.0] }
+
+# RAMMB's 85~92 GHz product is not an RGB but a single-channel brightness temperature (horizontal polarization preferred) with a color scale:
+# choose 89H (SSM/I 85H, SSMIS 91H) and then the colormap RAMMB (see [colormap] tb89 below)
+
+# ------------------------------------------------------------------
+# "Any-channel" recipes (no band): each color gun is given a channel directly, for sounders without dual polarization (ATMS, MHS, AMSU-A / B, SAPHIR);
+# imagers that have these channels (SSMIS, GMI, AMSR3) list them too.
+#   channel = "89" / "150" / "183±7" / "23.8" …  frequency (GHz); a polarization may be added ("89H"). The closest channel of the same frequency class is taken
+#             (within 12%: 150 matches 150 / 157 / 165.5 / 166; 183±7 matches ±7 / ±6.6 / ±6.8, and the 190.31 of MHS also counts as ±7)
+#   minus   = "150"   then subtract another channel (range is then the difference of the two); e.g.: red = { channel = "89", minus = "150", range = [-20.0, 50.0] }
+#   range, inverse, gamma as above. A recipe appears in the menu only when the channels of all three color guns are present.
+# !! RGB-150 is experimental, not an official NRL / RAMMB recipe (in 2004 NRL had an 89 / 150 GHz false-color composite for AMSU-B, but the recipe was not published).
+# ------------------------------------------------------------------
+# The look is modeled on NRL-89: sea surface cyan-green, deep convection red. Drawback: 89 GHz has no polarization correction, so dry, cold sea surfaces also turn reddish (mid-high latitudes, dry-air belts)
+[rgb.RGB-150]
+red = { channel = "89", range = [220.0, 280.0], inverse = true }
+green = { channel = "150", range = [180.0, 380.0] }
+blue = { channel = "183±7", range = [200.0, 340.0] }
+
+
+
+[report]
+min_tb = true            # colormap / grayscale products: print the lowest value within the map area (K; based on the raw sample values)
+max_tb = false
+
+
+# ------------------------------------------------------------------
+# Colormap menu: GRAY is always 1, followed by the entries below in order. Groups:
+#   tb89  80~95 GHz        tb37  30~40 GHz        tb150  140~200 GHz        tb  other frequencies
+#   pct89 / pct37 / pct (PCT of other frequencies)
+# file = .cmap file name in the colormap directory (unit K; the display range defaults to the two ends of the colormap and can be overridden with vmin / vmax)
+# or mpl = matplotlib colormap name (vmin / vmax required), e.g. { name = "JET", mpl = "jet_r", vmin = 180, vmax = 290 }
+# ------------------------------------------------------------------
+[colormap]
+tb89 = [
+    { name = "NRL", file = "nrl89" },        # 165~280 K (NRL89 of the original mpkit)
+    { name = "NRL2", file = "89h" },         # 105~305 K (NRL GeoIPS 89H)
+    { name = "RAMMB", file = "rammb89" },    # 72~323 K (85~92 GHz brightness temperature color scale of RAMMB/CIRA TC Realtime)
+    { name = "MWNRL", file = "mwnrl" },      # 150~320 K (colormap of the old Satima-SSMIS)
+]
+tb37 = [
+    { name = "NRL", file = "37h" },          # 125~300 K (NRL GeoIPS 37H)
+    { name = "MWNRL", file = "mwnrl" },
+]
+tb150 = [
+    { name = "NRL", file = "150h" },         # 110~310 K (NRL GeoIPS 150H)
+    { name = "MWNRL", file = "mwnrl" },
+]
+tb = [
+    { name = "MWNRL", file = "mwnrl" },
+    { name = "NRL37", file = "37h" },
+]
+pct89 = [
+    { name = "NRL", file = "nrlpct" },       # 160~260 K (NRLPCT of the original mpkit)
+    { name = "NRL2", file = "89pct" },       # 105~280 K (NRL GeoIPS 89pct)
+]
+pct37 = [
+    { name = "NRL", file = "37pct" },        # 230~280 K (NRL GeoIPS 37pct)
+]
+pct = [
+    { name = "NRL37", file = "37pct" },
+    { name = "NRL89", file = "nrlpct" },
+]
+
+
+# ------------------------------------------------------------------
+# Per-format settings: [readers.<format name>.<section>], e.g. each format kept in a different folder
+# ------------------------------------------------------------------
+# [readers.PPS-L1C.general]
+# data_dir = "D:/data/L1C"
+# [readers.SSMIS-SDR.general]
+# data_dir = "D:/data/NOAA"
