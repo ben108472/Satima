@@ -20,6 +20,7 @@
   舊 O&A 格式) 列出原因後略過。IR 的位置照資料本身的掃描編號、比照 McIDAS 慣例 (同 GOES-PREGVAR：IR 線中心 = 該步第一條
   VIS 線 + 3.5)，不另外修正配準。
 同名的 .indx (區塊索引)、.meta (JSON) 不是必要的：有 .indx 時可讀到不完整的記錄，.meta 只放進 header()。
+資料列表只讀檔頭、檔尾的記錄 (PROBE；時間、波段、範圍)，畫圖時才完整解析 (傳統硬碟冷啟動每檔 3~5 秒 -> 約 0.3 秒)。
 完整檔頭：reader.header(scene) 回傳 {'mode', 'records' (各記錄的文件欄位), 'offsets' / 'ir_pos' / 'vis_pos' (區塊位置)、
   'index_file'、'meta' (.meta 的內容)、'oa' (O&A)、'nav' (導航參數)、'calibration'}。
 """
@@ -41,6 +42,9 @@ _NAME = re.compile(r'^(goes|sms)(\d\d)\.(\d{4})\.(\d{3})\.(\d{4})(?:-(\d+))?\.(A
 IR_LINE_OFFSET = 3.5            # IR 線中心 = 該步第一條 VIS 線 + 3.5 (8 條 VIS 線的中央，同 GOES-PREGVAR)
 IR_ELE_OFFSET = 0.
 MIN_SPINS = 4                   # 一個波段至少要有幾圈資料才列入選單 (排除校正、換模式時的零星幾圈)
+# 資料列表只讀檔頭、檔尾的記錄 (前 n 筆、後 m 筆)：VAS 的波段在檔頭就會全部出現 (樣本 MSI 前 14 筆、DS 前 57 筆)；
+# Mode A 的波段固定，只要時間與 O&A (20 圈一組)
+PROBE = {'A': (40, 16), 'AA': (160, 16), 'AAA': (160, 16)}
 FILL_STEPS = 2                  # VAS 波段：沒有資料的步以最近的線補 (最多相隔幾步；DS 的小偵測器波段只涵蓋一半的步，
                                 # 同 McIDAS AREA 以最近一圈的資料重複填線)
 
@@ -65,6 +69,10 @@ class _Info:
         m = f.meta
         lay = f.layout
         frame = np.flatnonzero(m['frame'] & (m['scan'] >= 1) & (m['scan'] <= 1821))
+        if frame.size >= 3:                 # 掃描數的位元錯誤：與前後 9 筆的中位數相差超過 20 的記錄不用
+            s = m['scan'][frame].astype(float)
+            med = np.median(np.lib.stride_tricks.sliding_window_view(np.pad(s, 4, mode='edge'), 9), axis=1)
+            frame = frame[np.abs(s - med) <= 20]
         if frame.size == 0:
             raise ValueError(tr('沒有影像資料 (frame code)', 'no image data (frame code)'))
         self.frame = frame
@@ -75,7 +83,7 @@ class _Info:
         self.oa = sf.oa_fields(blocks)
         self.params = sf.nav_params(self.oa, self.yyddd, self.seconds, self.scan0)
         # VIS 線號
-        base = {'A': -11, 'AA': -3, 'AAA': -7}[lay.mode]            # 掃描 s 段 0 的線號 = 8 s + base
+        base = {'A': -3, 'AA': 5, 'AAA': -7}[lay.mode]              # 掃描 s 段 0 的線號 = 8 s + base
         have = f.vis_pos[frame] >= 0                                 # 不完整的記錄可能缺某幾段
         if not have.any():
             raise ValueError(tr('沒有可見光資料', 'no visible data'))
@@ -142,7 +150,7 @@ class GoesStretchedReader(GeoReader):
             path = os.path.join(folder, name)
             mode = m.group(7).upper()
             try:
-                info = self._info(path, mode)
+                info = _Info(sf.RawFile(path, mode, probe=PROBE[mode]))       # 列表只讀檔頭、檔尾；畫圖時才完整解析
             except (OSError, ValueError) as err:
                 print(tr('  [略過] %s：%s', '  [skip] %s: %s') % (name, err))
                 continue
@@ -162,7 +170,7 @@ class GoesStretchedReader(GeoReader):
             if len(info.vis_rec) <= 9000:                    # 涵蓋大部分地球 (> 9000 條 VIS 線) 為 FD，否則為區域
                 s.area = 'SECTOR'
                 try:
-                    s.extra['georange'] = self._image_range(s)
+                    s.extra['georange'] = self.nav_range(self._make_nav(info, 'VIS', (path, 'probe')), s.area)
                     s.region, s.auto_range = sector_label(s.extra['georange'])
                 except (SystemExit, ValueError):
                     pass
@@ -218,16 +226,16 @@ class GoesStretchedReader(GeoReader):
         kind = 'VIS' if channel == 'VIS' else 'IR'
         key = (path, kind)
         if key not in self._navs:
-            info = self._info(path)
-            engine = str(self.cfg.navigation.engine).lower()
-            if kind == 'VIS':
-                self._navs[key] = McGoesNav((len(info.vis_rec), sf.NVIS), info.params, info.vis_first, 1., 1., 1.,
-                                            key=key, engine=engine)
-            else:
-                first = (info.ir_first - 1) * 8 + 1 + IR_LINE_OFFSET
-                self._navs[key] = McGoesNav((info.ir_last - info.ir_first + 1, sf.NIR), info.params, first,
-                                            1. + IR_ELE_OFFSET, 8., 4., key=key, engine=engine)
+            self._navs[key] = self._make_nav(self._info(path), kind, key)
         return self._navs[key]
+
+    def _make_nav(self, info, kind, key):
+        engine = str(self.cfg.navigation.engine).lower()
+        if kind == 'VIS':
+            return McGoesNav((len(info.vis_rec), sf.NVIS), info.params, info.vis_first, 1., 1., 1., key=key, engine=engine)
+        first = (info.ir_first - 1) * 8 + 1 + IR_LINE_OFFSET
+        return McGoesNav((info.ir_last - info.ir_first + 1, sf.NIR), info.params, first, 1. + IR_ELE_OFFSET, 8., 4.,
+                         key=key, engine=engine)
 
     def satellite_position(self, scene):
         lon, lat, height = self.nav(scene, 'VIS').subpoint()
@@ -280,7 +288,7 @@ class GoesStretchedReader(GeoReader):
             total = np.zeros((nrow, sf.NIR), np.float64)
             count = np.zeros((nrow, sf.NIR), np.int32)                  # 逐像素的圈數 (無效像素不計)
             for slot in (0, 1):
-                items = [it for it in info.bands[band] if it[1] == slot]
+                items = [it for it in info.bands.get(band, ()) if it[1] == slot]    # 列表 (只讀檔頭) 有、整檔不足的波段為 NaN
                 if not items:
                     continue
                 recs = np.array([it[0] for it in items])

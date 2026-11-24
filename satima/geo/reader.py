@@ -20,6 +20,8 @@ import numpy as np
 
 from ..core.i18n import tr
 
+_NOT_DATA = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.py', '.pyc')     # find() 不列入的副檔名
+
 
 @dataclass(frozen=True)
 class Channel:
@@ -92,7 +94,8 @@ class GeoReader:
         names = set()
         for pattern in cls.PATTERNS:
             names.update(glob(pattern, root_dir=folder))
-        return sorted(names)
+        # 寬鬆的檔名規則 (例如 GOES-GVAR 的 GOS*_GVR_*) 不要選到放在同一資料夾的輸出圖、程式
+        return sorted(n for n in names if not n.lower().endswith(_NOT_DATA))
 
     def scenes(self, folder='.'):
         """回傳 Scene 列表 (依時間排序)。"""
@@ -161,14 +164,17 @@ class GeoReader:
         return scene.extra['georange']
 
     def _image_range(self, scene):
-        name = next(iter(scene.files))
-        nav = self.nav(scene, name)
+        return self.nav_range(self.nav(scene, next(iter(scene.files))), scene.area)
+
+    @staticmethod
+    def nav_range(nav, area=''):
+        """導航物件涵蓋的經緯度範圍 (南, 北, 西, 東)：影像邊緣與內部 41 x 41 個取樣點。"""
         ny, nx = nav.shape
         rows, cols = np.meshgrid(np.linspace(0, ny - 1, 41), np.linspace(0, nx - 1, 41), indexing='ij')
         lon, lat = nav.to_lonlat(rows, cols)
         ok = np.isfinite(lon) & np.isfinite(lat)
         if not ok.any():
-            raise SystemExit(tr('無法計算 %s 的影像範圍', 'Cannot determine the image range of %s') % scene.area)
+            raise SystemExit(tr('無法計算 %s 的影像範圍', 'Cannot determine the image range of %s') % area)
         lon = lon[ok]
         if lon.max() - lon.min() > 180:     # 跨換日線：改用 0~360
             lon = lon % 360.

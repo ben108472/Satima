@@ -26,16 +26,22 @@ NCEI 2024 重處理版的檔案 (goesNN.yyyy.ddd.hhmm.A.data、.AA-MSI.data、.A
   VIS 段：文件 512 字 (384 bytes) + 影像 15288 字 (11466 bytes)，6 位元；文件第 1~3 字為段碼 (ONE = 111110、ZERO = 000001)。
   文件中的 ONE / ZERO 旗標以 $FE / $01 表示。
 
-VIS 線號 (由 1 起算，同 McIDAS AREA：掃描 N 的 8 條線為 (N-1) x 8 + 1 ~ + 8)：
-  AAA   每段 VIS 文件第 9~12 字記錄該線的掃描數 = 記錄的預測掃描數 N，段 j = 第 j+1 條線 (表 9)。
-  AA    段 0~3 = 掃描 N 的 V5~V8、段 4~7 = 掃描 N+1 的 V1~V4 (Rev. C 表 2)，即線號 (N-1) x 8 + 5 + j。
-  A     與同時次的 Mode AA 比對：Mode A 掃描 s 的第 k 段與 AA 掃描 s-1 的第 k 段逐段相同 (400 條線全部吻合)，
-        所以線號 (s-2) x 8 + 5 + k (同一格式，SMS 時代亦同)。
+VIS 線號 (由 1 起算，同 McIDAS AREA：掃描 N 的 8 條線為 (N-1) x 8 + 1 ~ + 8；s / N = 記錄的掃描數，k / j = 段 0~7)：
+  AAA   (N-1) x 8 + 1 + j：每段 VIS 文件第 9~12 字記錄該線的掃描數 = N (表 9)；與 CLASS 的 SSEC AREA_VIS 逐線相同。
+  A     (s-1) x 8 + 5 + k：段 0~3 = 掃描 s 的 V5~V8、段 4~7 = 掃描 s+1 的 V1~V4；與 CLASS 的 SSEC AREA_VIS 逐線相同
+        (SMS-2 1979、GOES-6 1985；pregvar 以 GOES-1 也得到 AREA 線 = 8 (s-1) + 偵測器 + 4)。
+  AA    N x 8 + 5 + j：同時次的 Mode A 掃描 s 第 k 段與 AA 掃描 s-1 第 k 段是同一圈 (GOES-6 1985 19:31、20:31，
+        24 線區塊相關 0.98，80 個區塊全部對在同一線；兩者由不同的地面處理產生，像素值不完全相同)。
+        (CLASS 的 SSEC AA AREA_VIS 是 8 (N-1) + 5 + j，比這裡北 8 線；但同組 AA AREA_IR 的線號與這裡相同、導航區塊在
+        同一線號的位置與這裡相差 < 0.5 線，所以是 SSEC 的 AA 可見光偏了一個掃描，不採用。)
+  依據：在這個編號下，GOES-6 (Mode A、AA) 與 SMS-2 的 IR 與 VIS 南北配準都在 2 線內 (AAA +2 線)，可見光海岸線殘差 +2、-6 線；
+  若照 Rev. C 表 2 的字面 (段 0~3 屬於記錄的掃描 N) 排，配準差 9~11 線、殘差 -6、-14 線。
 IR 線位置 (掃描步，一步 = 8 條 VIS 線)：
   A     記錄的掃描數 s。
   AA    小偵測器 (HgCdTe 小) 上 = s、下 = s+1；大偵測器 (HgCdTe 大、InSb) 各涵蓋 2 步，上 = s、s+1，下 = s+4、s+5。
-        (以影像相關性量得，與 AAA 文件的 adjusted earth count 一致。)
-  AAA   IR 文件第 9~10 字的 adjusted earth count (已依上下偵測器位移修正) + (預測掃描數 - earth count)；大偵測器涵蓋 2 步。
+        (以影像相關性量得，與 AAA 的 adjusted earth count 一致；各格式、各波段的位置與 CLASS 的 SSEC AREA_IR 逐像素相同。)
+  AAA   IR 文件第 9~10 字的 adjusted earth count (已依上下偵測器位移修正) + 整檔的 (預測掃描數 - earth count) 中位數；
+        大偵測器涵蓋 2 步；adjusted earth count 為 0 (VISSR 模式的 .AAA) 時改用 AA 的規則。
 """
 import mmap
 import os
@@ -171,9 +177,11 @@ class RawFile:
       ir_pos   (記錄數, IR 區塊數) 各 IR 區塊的起點；vis_pos (記錄數, 8) 各 VIS 段的起點；-1 = 這筆記錄沒有該區塊
     同名的 .indx (NCEI 附的區塊索引：每列 檔名、位置 (32 位元字)、位元偏移、區塊類型 [掃描數]) 存在時以它為準，
     可讀到不完整的記錄 (缺段的短記錄、檔尾截斷的記錄)；每個區塊仍以段碼驗證，不符的區塊不用。
-    沒有 .indx 或索引與資料不符時，改以 VIS 段碼自行定位 (只用完整的記錄)。"""
+    沒有 .indx 或索引與資料不符時，改以 VIS 段碼自行定位 (只用完整的記錄)。
+    probe = (前 n 筆, 後 m 筆)：只取檔頭、檔尾的記錄 (資料列表用)。每筆記錄的文件分散在整個檔 (每筆約 100 KB)，
+    全部讀取在傳統硬碟上冷啟動每檔要 3~5 秒；波段在檔頭就會全部出現 (MSI 前 14 筆、DS 前 57 筆)。"""
 
-    def __init__(self, path, mode):
+    def __init__(self, path, mode, probe=None):
         self.path, self.mode = path, mode
         self.layout = LAYOUTS[mode]
         with open(path, 'rb') as f:
@@ -182,7 +190,11 @@ class RawFile:
         self.index_file = None
         blocks = self._read_indx()
         if blocks is None:
-            blocks = self._sync_index()
+            blocks = self._sync_index(probe)
+        elif probe:
+            n = len(blocks[0])
+            keep = np.unique(np.r_[np.arange(min(probe[0], n)), np.arange(max(0, n - probe[1]), n)])
+            blocks = tuple(b[keep] for b in blocks)
         self.offsets, self.ir_pos, self.vis_pos = blocks
         self.meta = parse(self.data, self.ir_pos, mode)
 
@@ -224,17 +236,18 @@ class RawFile:
         vis = np.array(viss, np.int64).reshape(len(starts), 8)
         # 驗證：區塊完整在檔內；不在正常配置位置的區塊 (例如短記錄中前移的段) 還要段碼相符
         # (在正常位置的區塊即使標頭段碼有位元錯誤也保留，影像本身沒有問題)。不符的區塊標成 -1，太多不符時不用這個索引
+        # 只讀被移動的區塊 (逐筆讀每一段的段碼，冷啟動時在傳統硬碟上每檔要 6~8 秒)
         size = len(self.data)
         vis_bad = (vis < 0) | (vis + VIS_SECTOR > size)
-        b = gather(self.data, vis.ravel(), 0, 1).astype(np.int64)
-        code = ((b[:, 0] << 10) | (b[:, 1] << 2) | (b[:, 2] >> 6)).reshape(-1, 8)
-        moved = vis != start[:, None] + L.vis0 + VIS_SECTOR * np.arange(8)[None, :]
-        vis_bad |= (code != np.array(_CODES)) & moved
+        chk = np.nonzero((vis != start[:, None] + L.vis0 + VIS_SECTOR * np.arange(8)[None, :]) & ~vis_bad)
+        if chk[0].size:
+            b = gather(self.data, vis[chk], 0, 1).astype(np.int64)
+            vis_bad[chk] = ((b[:, 0] << 10) | (b[:, 1] << 2) | (b[:, 2] >> 6)) != np.array(_CODES)[chk[1]]
         ir_bad = (ir < 0) | (ir + L.ir_bytes > size)
         if L.mode != 'A':
-            w = words(self.data, ir.ravel(), 0, 1, 10).reshape(ir.shape)
-            moved = ir != start[:, None] + np.array(L.ir_slots, np.int64)[None, :] // 8
-            ir_bad |= ~np.isin(w, (UPPER, LOWER)) & moved
+            chk = np.nonzero((ir != start[:, None] + np.array(L.ir_slots, np.int64)[None, :] // 8) & ~ir_bad)
+            if chk[0].size:
+                ir_bad[chk] = ~np.isin(words(self.data, ir[chk], 0, 1, 10)[:, 0], (UPPER, LOWER))
         checked = (vis >= 0).sum() + (ir >= 0).sum()
         if checked == 0 or ((vis_bad & (vis >= 0)).sum() + (ir_bad & (ir >= 0)).sum()) > .1 * checked:
             return None
@@ -244,9 +257,12 @@ class RawFile:
         self.index_file = path
         return start[keep], ir[keep], vis[keep]
 
-    def _sync_index(self):
+    def _sync_index(self, probe=None):
         L = self.layout
-        start = self._index()
+        if probe:
+            start = np.unique(np.r_[self._index(probe[0]), self._last_records(probe[1])]).astype(np.int64)
+        else:
+            start = self._index()
         ir = start[:, None] + np.array(L.ir_slots, np.int64)[None, :] // 8
         vis = start[:, None] + L.vis0 + VIS_SECTOR * np.arange(8)[None, :]
         return start, ir, vis
@@ -258,25 +274,49 @@ class RawFile:
         b0, b1, b2 = (int(x) for x in self.data[q:q + 3])
         return ((b0 << 10) | (b1 << 2) | (b2 >> 6)) == _CODES[k]
 
-    def _ok(self, p):
-        return all(self._sector_ok(p, k) for k in (0, 1, 6, 7))
+    def _ok(self, p, sectors=(0, 1, 6, 7)):
+        return all(self._sector_ok(p, k) for k in sectors)
 
-    def _index(self):
-        """依 VIS 第 0、1、6、7 段的段碼確認每筆記錄；不符時往後找下一個段碼重新對齊 (短記錄、雜訊)。"""
+    def _mostly_ok(self, p):
+        return sum(self._sector_ok(p, k) for k in range(8)) >= 6
+
+    def _index(self, limit=None):
+        """依 VIS 第 0、1 段的段碼確認每筆記錄；不符時，8 段中至少 6 段的段碼相符也算 (段碼的位元錯誤，
+        例如 SMS-2 1979/243 12:30 掃描 1267、1670：SSEC AREA 有這兩圈，內容與此處讀到的相同)，
+        否則往後找下一個第 0、1、6、7 段都相符的位置重新對齊 (短記錄、雜訊)。
+        記錄末端 (第 6、7 段) 只在下一筆不在正常位置 (及最後一筆) 時確認：下一筆接在正常位置就表示這筆完整。
+        (每筆只讀記錄開頭，冷啟動時在傳統硬碟上快一倍。) limit：只找前 limit 筆。"""
         size, rec, vis0 = len(self.data), self.layout.rec, self.layout.vis0
         offs, p = [], 0
-        while p + rec <= size:
-            if self._ok(p):
+        while p + rec <= size and (limit is None or len(offs) <= limit):
+            if self._ok(p, (0, 1)) or (offs and p == offs[-1] + rec and self._mostly_ok(p)):
                 offs.append(p)
                 p += rec
                 continue
-            q = self._mm.find(b'\x04\x10', p + vis0 + 1)
-            while q != -1 and not (q - vis0 > p and q - vis0 + rec <= size and self._ok(q - vis0)):
+            # 上一筆只確認過開頭，可能是短記錄 (下一筆在 p 之前就開始)：從上一筆之後找
+            base = offs[-1] if offs and p == offs[-1] + rec else p
+            q = self._mm.find(b'\x04\x10', base + vis0 + 1)
+            while q != -1 and not (q - vis0 > base and q - vis0 + rec <= size and self._ok(q - vis0)):
                 q = self._mm.find(b'\x04\x10', q + 1)
             if q == -1:
                 break
             p = q - vis0
-        return np.array(offs, dtype=np.int64)
+        out = [p for i, p in enumerate(offs)
+               if (i + 1 < len(offs) and offs[i + 1] == p + rec) or self._ok(p, (6, 7))]
+        return np.array(out[:limit], dtype=np.int64)
+
+    def _last_records(self, n):
+        """檔尾的最後 n 筆完整記錄 (由檔尾往前找段碼)。"""
+        size, rec, vis0 = len(self.data), self.layout.rec, self.layout.vis0
+        q = self._mm.rfind(b'\x04\x10')
+        while q != -1 and not (q - vis0 >= 0 and q - vis0 + rec <= size and self._ok(q - vis0)):
+            q = self._mm.rfind(b'\x04\x10', 0, q)
+        if q == -1:
+            return np.zeros(0, np.int64)
+        out = [q - vis0]
+        while len(out) < n and out[-1] - rec >= 0 and self._ok(out[-1] - rec):
+            out.append(out[-1] - rec)
+        return np.array(out[::-1], dtype=np.int64)
 
     # ---- 影像 ------------------------------------------------------------------------------
     def vis_lines(self, recs, sectors, c0, c1):
@@ -317,6 +357,18 @@ def _oa_words(doc):
     return blk, mfi, v
 
 
+def repair_scan(scan, limit=20):
+    """掃描數的位元錯誤：前後兩筆是連續掃描 (相差 2)、本筆卻偏離超過 limit 時，改為前一筆 + 1。
+    (SMS-2 1979/243 12:30 掃描 670、940 的掃描數錯成 2673；SSEC AREA 有這兩圈，內容與這兩筆記錄相同。)
+    只修明顯的錯誤，DS 駐留 (同一掃描數重複) 與回掃不受影響。"""
+    s = np.array(scan, dtype=np.int64)
+    if len(s) >= 3:
+        prev, cur, nxt = s[:-2], s[1:-1].copy(), s[2:]
+        fix = (nxt - prev == 2) & (np.abs(cur - prev) > limit) & (prev >= 1) & (nxt <= 1821)
+        s[1:-1] = np.where(fix, prev + 1, cur)
+    return s
+
+
 def parse(data, ir_pos, mode):
     """各記錄的文件欄位 -> dict (陣列，長度 = 記錄數)。ir_pos：各記錄 IR 區塊的起點 (記錄數, 區塊數)。"""
     n = len(ir_pos)
@@ -325,7 +377,7 @@ def parse(data, ir_pos, mode):
         doc = bits_at(gather(data, ir_pos[:, 0], 0, 145), 1 + 9 * np.arange(128), 8).astype(np.int64)
         m['frame'] = doc[:, 3] == ONE
         m['ir_select'] = doc[:, 7]
-        m['scan'] = ((doc[:, 24] >> 4) & 3) * 1000 + (doc[:, 24] & 15) * 100 + bcd(doc[:, 25])
+        m['scan'] = repair_scan(((doc[:, 24] >> 4) & 3) * 1000 + (doc[:, 24] & 15) * 100 + bcd(doc[:, 25]))
         m['yyddd'], m['seconds'] = _time(bcd(doc[:, 26]) * 100 + bcd(doc[:, 27]), bcd(doc[:, 28]) * 100 + bcd(doc[:, 29]),
                                          bcd(doc[:, 30]), bcd(doc[:, 31]), bcd(doc[:, 32]), bcd(doc[:, 33]) * 10)
         m['blk'], m['mfi'], m['oa'] = _oa_words(doc)
@@ -336,7 +388,8 @@ def parse(data, ir_pos, mode):
     irdoc = [words(data, ir_pos[:, s], 0, 16, 10).astype(np.int64) for s in range(len(L.ir_slots))]
     common = (words(data, ir_pos[:, 0], COMMON_DOC * 10, 384, 10) & 0xFF).astype(np.int64)
     f1, f2, f3 = common[:, :128], common[:, 128:256], common[:, 256:384]
-    m['scan'] = ((f1[:, 24] >> 4) & (7 if mode == 'AA' else 3)) * 1000 + (f1[:, 24] & 15) * 100 + bcd(f1[:, 25])
+    m['scan'] = repair_scan(((f1[:, 24] >> 4) & (7 if mode == 'AA' else 3)) * 1000 + (f1[:, 24] & 15) * 100
+                            + bcd(f1[:, 25]))
     m['yyddd'], m['seconds'] = _time(bcd(f1[:, 27]), (f1[:, 28] & 15) * 100 + bcd(f1[:, 29]), bcd(f1[:, 30]),
                                      bcd(f1[:, 31]), bcd(f1[:, 32]),
                                      (f1[:, 33] >> 4) * 100 + (f1[:, 33] & 15) * 10 + (f1[:, 28] >> 4))
@@ -361,7 +414,12 @@ def parse(data, ir_pos, mode):
     else:
         m['earth'] = bcd(f1[:, 38]) * 100 + bcd(f1[:, 39])
         adj = np.stack([bcd(d[:, 8]) * 100 + bcd(d[:, 9]) for d in irdoc], 1)
-        m['step'] = adj + (m['scan'] - m['earth'])[:, None]
+        # 掃描數 - earth count 在一個畫格內是常數 (= EQUAT - 836)：取整檔的中位數，不受個別記錄位元錯誤影響
+        ok = (m['earth'] > 0) & (m['scan'] > 0)
+        k = int(np.median((m['scan'] - m['earth'])[ok])) if ok.any() else 0
+        aa_rule = m['scan'][:, None] + np.where(m['sector'] == LOWER, np.where(m['det'] == SMALL, 1, 4), 0)
+        # adjusted earth count 為 0 (VISSR 模式的 .AAA 檔不填) 時改用 AA 的上下偵測器規則
+        m['step'] = np.where(adj > 0, adj + k, aa_rule)
         m['ircal'] = f3[:, 62:112]                                   # 第 3 欄第 63~112 字：IR 校正參數 (20 圈輪替)
     m['nsteps'] = np.where(m['det'] == SMALL, 1, 2)
     m['common'] = common

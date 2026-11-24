@@ -1,6 +1,7 @@
 """GVAR 以前的 GOES 與 SMS (SMS-1/2、GOES-1~7) — VISSR / VAS 的 McIDAS AREA
 檔名 (SSEC / NOAA CLASS)：goesNN.YYYY.DDD.HHMM[-n].AREA_IR / .AREA_VIS、smsNN.YYYY.DDD.HHMM.AREA_IR / .AREA_VIS
-  同一衛星、時間 (含 -n 序號) 的可見光與紅外檔合成一筆資料。
+  (中間可加原始資料的模式，例如 goes06.1985.267.2031.AA-MSI.AREA_VIS)
+  同一衛星、時間 (含 -n 序號、模式) 的可見光與紅外檔合成一筆資料。
 格式 (結構與欄位名稱同舊版 AREA_format.py，見 sensors/pregvar_area_format.py)：
   AREA 目錄 64 words (依第 2 個 word = 4 判斷位元組順序)；影像座標以可見光線、像素為單位 (由 1 起算)，
     可見光解析度 1 / 1，紅外 8 (一圈 8 條可見光線) / 4。W34 = 影像位置、W35 = 導航區塊、W63 = 校正區塊。
@@ -20,7 +21,8 @@
     FK1、FK2、TC1、TC2 沿用舊版的一組 VAS 係數 (未註明衛星；GOES-4~7 的光譜響應略有不同，目前無各衛星的係數)。
   計數值 0、整行為 0、波段表中沒有該波段的行 為 NaN。
 導航：McIDAS 'GOES' 導航 (mcidas_goes_nav.McGoesNav)；導航區塊沒有軌道參數的檔案 (例如 1979 年的 GOES-1、GOES-3) 無法定位，略過。
-完整檔頭：reader.header(scene, 頻道) 回傳 {'Control_Block', 'Navigation', 'Calibration', 'Line_prefix', 'Level_map', 'nav'}。
+  由 mode AA 產生的 AREA_VIS (目錄註記 'AA transcribed archive data') 線號比實際少一個掃描，讀取時 + 8 線 (AA_VIS_LINE_SHIFT)。
+完整檔頭：reader.header(scene, 頻道) 回傳 {'Control_Block', 'Navigation', 'Calibration', 'Line_prefix', 'Level_map', 'nav', 'line_shift' (線號修正量)}。
 """
 import datetime
 import os
@@ -35,7 +37,9 @@ from mcidas_goes_nav import McGoesNav, params as nav_params
 from satima.core.i18n import tr
 from satima.geo.reader import Channel, GeoReader, Scene
 
-_NAME = re.compile(r'^(goes|sms)(\d\d)\.(\d{4})\.(\d{3})\.(\d{4})(?:-(\d+))?\.AREA_(IR|VIS)$', re.I)
+# 檔名中間可有原始資料的模式 (例如 goes06.1985.267.2031.AA-MSI.AREA_VIS)，同一時間不同模式的 AREA 分開成不同筆
+_NAME = re.compile(r'^(goes|sms)(\d\d)\.(\d{4})\.(\d{3})\.(\d{4})(?:-(\d+))?(?:\.(A{1,3}(?:-[A-Za-z]+)?))?\.AREA_(IR|VIS)$',
+                   re.I)
 
 # 紅外線、像素中心相對於影像座標的偏移 (可見光單位)：紅外每圈取樣一次，AREA 的紅外行號 = 該圈第一條可見光線
 # (例如 817 = 8 x 102 + 1)，中心在同一圈 8 條可見光線的中央 (+3.5)，同 GVAR 紅外的 +1.5。
@@ -43,6 +47,12 @@ _NAME = re.compile(r'^(goes|sms)(\d\d)\.(\d{4})\.(\d{3})\.(\d{4})(?:-(\d+))?\.AR
 #  不一致，屬當時的配準誤差，不修正。)
 IR_LINE_OFFSET = 3.5
 IR_ELE_OFFSET = 0.
+
+# VAS mode AA 產生的 AREA_VIS (目錄註記 'AA transcribed archive data')：SSEC 照 AA 記錄標頭的掃描數排線號，
+# 比同一組 AREA_IR、同時次 Mode A 的 AREA_VIS 與原始資料 (GOES-STRETCHED) 都北一個掃描 (8 線)，讀取時線號 + 8。
+# (GOES-6 1985/09/24 20:31：AA AREA_VIS 與原始 AA 逐像素相同但線號少 8；同組 AREA_IR 線號與原始資料相同；
+#  同時次的 Mode A 與 AA 原始資料畫面在同一線。見 docs/GEO.md。)
+AA_VIS_LINE_SHIFT = 8
 
 # VAS 波段 (中心波長、種類、功能代稱)、輻射 -> 亮溫係數 (舊版 goes_pregvar_tools.py)、mode AA 的放大位數 F 與
 # RAWDELTAF -> DELTAF 查表：與 GOES-STRETCHED 共用，定義在 sensors/stretched_format.py
@@ -71,6 +81,10 @@ class AreaFile:
             craw = f.read(fmt._Calibration_AAA.itemsize) if cal_off > 0 else b''
         self.source = bytes(d['Image source type']).decode('ascii', 'replace').strip()
         self.caltype = bytes(d['Calibration Type']).decode('ascii', 'replace').strip()
+        self.memo = bytes(d['Memo']).decode('ascii', 'replace').strip()
+        # 由 mode AA 產生的可見光 AREA 的線號修正量 (見 AA_VIS_LINE_SHIFT)
+        aa_vis = int(d['LINERES']) == 1 and self.memo.split()[:1] == ['AA']
+        self.line_shift = AA_VIS_LINE_SHIFT if aa_vis else 0
         self.cal = (np.frombuffer(craw, _dt(fmt._Calibration_AAA, self.order), count=1)[0]
                     if len(craw) == fmt._Calibration_AAA.itemsize else None)
         self.nlines, self.neles = int(d['NLINES']), int(d['NELES'])
@@ -154,19 +168,20 @@ class GoesPreGvarReader(GeoReader):
             hms = int(a.dir['HHMMSS'])
             t = datetime.datetime.strptime(m.group(3) + m.group(4), '%Y%j') + datetime.timedelta(
                 hours=hms // 10000, minutes=hms // 100 % 100, seconds=hms % 100)
-            key = (sat, m.group(3), m.group(4), m.group(5), m.group(6))
+            tag = (m.group(7) or '').upper()
+            key = (sat, m.group(3), m.group(4), m.group(5), m.group(6), tag)
             if key not in groups:
-                groups[key] = Scene(sat, t, 'FD', format='AREA',
+                groups[key] = Scene(sat, t, 'FD', format='AREA' + (' ' + tag if tag else ''),
                                     sensor='VAS' if m.group(1).lower() == 'goes' and n >= 4 else 'VISSR')
             s = groups[key]
-            if m.group(7).upper() == 'VIS':
+            if m.group(8).upper() == 'VIS':
                 s.files['VIS'] = path
             elif a.source == 'VISR':
                 s.files['IR'] = path
             else:
                 for b in a.bands:
                     s.files.setdefault('B%02d' % b, path)
-            s.extra.setdefault('source', {})[m.group(7).upper()] = a.source
+            s.extra.setdefault('source', {})[m.group(8).upper()] = a.source
         out = sorted(groups.values(), key=lambda s: (s.time, s.satellite))
         for s in out:
             # 涵蓋大部分地球 (> 9000 條可見光線) 為 FD，否則為區域 (小範圍時地圖範圍自動帶入)
@@ -211,7 +226,7 @@ class GoesPreGvarReader(GeoReader):
         a = self._area(scene, channel)
         blk, lev = a.prefix
         return {'Control_Block': a.dir, 'Navigation': a.nav, 'Calibration': a.cal, 'Line_prefix': blk,
-                'Level_map': lev, 'nav': nav_params(a.navblock)}
+                'Level_map': lev, 'nav': nav_params(a.navblock), 'line_shift': a.line_shift}
 
     # ---- 導航 --------------------------------------------------------------
     def nav(self, scene, channel):
@@ -220,7 +235,7 @@ class GoesPreGvarReader(GeoReader):
             a = self._open(path)
             d = a.dir
             lres, eres = int(d['LINERES']), int(d['ELERES'])
-            first_line = int(d['UPPERLEFTLINE']) + (IR_LINE_OFFSET if lres > 1 else 0.)
+            first_line = int(d['UPPERLEFTLINE']) + (IR_LINE_OFFSET if lres > 1 else 0.) + a.line_shift
             first_ele = int(d['UPPERLEFTELE']) + (IR_ELE_OFFSET if eres > 1 else 0.)
             self._navs[path] = McGoesNav((a.nlines, a.neles), a.navblock, first_line, first_ele, lres, eres,
                                          key=(path,), engine=str(self.cfg.navigation.engine).lower())
