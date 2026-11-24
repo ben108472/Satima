@@ -424,7 +424,7 @@ class McGoesNav(Nav):
 
     def __init__(self, shape, navblock, first_line, first_ele, line_step=1., ele_step=1., key=None, engine='numba'):
         self.shape = (int(shape[0]), int(shape[1]))
-        self.p = params(navblock)
+        self.p = navblock if isinstance(navblock, dict) else params(navblock)   # dict = 已算好的 params()
         self.C = constants(self.p)
         self.first_line, self.first_ele = float(first_line), float(first_ele)
         self.line_step, self.ele_step = float(line_step), float(ele_step)

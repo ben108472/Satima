@@ -8,7 +8,7 @@
 
 
 支援 Himawari-8/9 (AHI)、GOES-16\~19 (ABI)、GK-2A (AMI)、MTG-I (FCI)、MTSAT-1R/2 (Imager)、COMS-1 (MI)、
-GMS-1\~5 / GOES-9 (VISSR)、GOES-8\~15 (Imager，GVAR / AREA)、SMS-1/2、GOES-1\~7 (VISSR / VAS，McIDAS AREA)、
+GMS-1\~5 / GOES-9 (VISSR)、GOES-8\~15 (Imager，GVAR / AREA)、SMS-1/2、GOES-1\~7 (VISSR / VAS，McIDAS AREA 與 Mode A / AA / AAA 原始資料)、
 Meteosat-8\~11 (MSG SEVIRI，HRIT / native / NetCDF)、Meteosat-2\~7 (MFG MVIRI，FCDR / NetCDF)：
 單波段、紅外/水氣色表強化、CIRA 真實色 (True Color)，以及加上夜間雲與城市燈光的 GeoColor；
 MTG 的 FDHSI 與 HRFI 分開列出，HRFI 的 TrueColor 以 0.5 km 紅光銳化。
@@ -116,6 +116,8 @@ sensors/geo/              各衛星讀取器，檔名 <感測器>-<格式>.py
   mcidas_goes_nav.py        (輔助) McIDAS 'GOES' 導航 (自旋掃描，同 nvxgoes / VisAD GOESnav) 與精確反算
   mcgoes_nav_cy.pyx         (輔助) 同上的 Cython 版
   pregvar_area_format.py    (輔助) 舊版 AREA_format.py 原樣複製的格式定義
+  GOES-STRETCHED.py         SMS-1/2、GOES-1~7 Mode A / AA / AAA 原始 stretched 資料 (NCEI 2024：*.A.data、*.AA-MSI.data、*.AAA-DS.data…)
+  stretched_format.py       (輔助) Mode A / AA / AAA 的記錄配置、文件欄位、O&A、校正，以及 VAS 波段表與亮溫係數 (GOES-PREGVAR 共用)
   SEVIRI-HRIT.py            MSG SEVIRI EUMETSAT HRIT (H-000-MSG*，含 -C_ 壓縮、.bz2)
   SEVIRI-NAT.py             MSG SEVIRI Level 1.5 native (MSG?-SEVI-MSG15-*.nat，或 Data Store 的 .zip 不必解開)
   SEVIRI-NC.py              MSG SEVIRI Level 1.5 NetCDF (W_XX-EUMETSAT-Darmstadt,...SEVIRI_C_EUMG_*.nc) — 尚無樣本驗證
@@ -624,6 +626,63 @@ FGGE 時期 (1978~1979) 的 GMS-1 VISSR 磁帶映像，一卷磁帶一個檔案 
 * 這個年代的導航本身有數 km 誤差 (可見光海岸線：南北 +2\~+6 km、東西 -7\~+2 km，依影像而異)，照 McIDAS 公式不另修正。
 * 導航區塊沒有軌道參數的檔案 (例如 1979 年的 GOES-1、GOES-3，McIDAS 也無法導航) 會列出原因後略過。
 * 完整檔頭：`reader.header(scene, 'B08')` 回傳 AREA 目錄、導航區塊、AAA 校正區塊、每行前置資料 (_Data_Block) 與波段表。
+
+### SMS、GOES-1\~7 原始資料 (Mode A / AA / AAA)
+
+* 檔名 (NCEI 2024 重處理版，NOAA CLASS)：`goesNN.YYYY.DDD.HHMM.A.data`、`.AA-MSI.data`、`.AA-DS.data`、`.AAA-MSI.data`、
+  `.AAA-DS.data`、`smsNN.YYYY.DDD.HHMM.A.data`。一個檔 = 一筆資料 (VIS 與 IR 在同一個檔)；資料列表的格式欄為 MODE A、MODE AA-MSI…
+  (MSI = 多頻道影像、DS = dwell sounding)。
+* 格式依 NOAA 的格式文件：Mode A 為 NCC 1978 的 VISSR Digital Archive Users' Guide 與 1982/10 的 Modified IR Documentation，
+  Mode AA 為 Output Format Rev. B / C，Mode AAA 為 SFP 002 v2.5A (1987/09)。檔案中一筆記錄 = 一圈 (0.6 秒) 去掉同步碼後的資料：
+
+  | | 記錄 | IR | VIS |
+  |---|---|---|---|
+  | Mode A | 99244 bytes | 文件 128 字 + 3818 個樣本，9 位元字 (1 個旗標位元 + 8 位元) | 8 段 x (文件 512 字 + 15288 個樣本)，6 位元 |
+  | Mode AA | 109536 bytes | IR1、IR2 各：文件 16 + 影像 3822 + EOLC 8 + 共同文件 2048 字，10 位元 | 同上 |
+  | Mode AAA | 109516 bytes | 兩個 IR 區塊各：文件 16 + 影像 3822 + EOLC 8 + 共同文件 512 + 格網 1024 + Mode A 文件 128…，10 位元 | 同上 |
+
+  記錄偶有不完整 (AA-DS 樣本中一筆缺 VIS 第 1 段、之後的區塊整體前移；AAA-MSI 中一筆沒有 IR1 的損壞記錄；檔尾截斷)：
+  有同名的 `.indx` (CLASS 附的區塊索引) 時依它逐區塊定位，可讀到不完整的記錄；沒有時以 VIS 段碼定位，只用完整的記錄
+  (6 個樣本兩種方式的區塊位置完全相同，`.indx` 多讀回 3 筆不完整記錄)。`.indx`、`.meta` 都不是必要的。
+  `.meta` (JSON) 的導航來源 (`navigation_source`，樣本皆為 native = 原始資料流的 O&A)、O&A 眾數 (與讀取器組出的相同)
+  只放進 `header()`。
+  Mode A 的 IR 第 3819\~3822 個位置是行尾標記，為 NaN。
+* 波段：Mode A 為 `VIS`、`IR`；Mode AA / AAA 為 `VIS` 與 VAS 的 `BAND-01`\~`BAND-12`。每圈的濾鏡輪位置 (預測標頭) 決定該圈的波段：
+  MSI 例如 8、7、8、7、8、10、8、10 輪替 (band 8 每兩圈、band 7 / 10 每四圈)；DS 在部分掃描步駐留、依序取各波段，
+  同一波段、同一步有多圈時輻射取平均。校正圈 (submode 4) 與 frame code 不是 picture 的圈不使用。
+* VIS 線號 (由 1 起算，掃描 N 的 8 條線 = (N-1) x 8 + 1 \~ + 8，同 McIDAS AREA)：
+  AAA 的每段 VIS 文件 (第 9\~12 字) 直接記錄掃描數 N，段 j = 第 j+1 條線；AA 依 Rev. C 表 2：段 0\~3 = 掃描 N 的 V5\~V8、
+  段 4\~7 = 掃描 N+1 的 V1\~V4；Mode A：同時次的 Mode A 與 Mode AA (GOES-6 1985/09/24 20:31) 逐段比對，
+  Mode A 掃描 s 的第 k 段 = AA 掃描 s-1 的第 k 段 (400 條線全部吻合)，所以與 AA 相同 (線號 (s-2) x 8 + 5 + k)。
+* IR 線位置 (掃描步，一步 = 8 條 VIS 線)：Mode A 為記錄的掃描數。VAS 每圈有上 (IR1)、下 (IR2) 兩個偵測器：
+  小偵測器 (HgCdTe 小) 下 = 上 + 1 步；大偵測器 (HgCdTe 大、InSb) 各涵蓋 2 步，下 = 上 + 4 步。
+  AAA 的 IR 文件直接記錄已修正上下偵測器位移的 adjusted earth count；AA 沒有這個欄位，以影像相關性量得相同的排列。
+  DS 的小偵測器波段只涵蓋一半的掃描步，空缺以最近的線補上 (最多 2 步，同 McIDAS AREA 以最近一圈重複填線)。
+* 校正：
+  * VIS：反射率 = (計數值 / 63)^2 (同 GOES-PREGVAR)。
+  * Mode A IR：NCC 1978 附錄 II，計數值 < 176 為 330 - c/2，否則 418 - c (K)。
+  * Mode AA：輻射 = (32 x V - YZQ) x 2^(F + DELTAF - 15)；YZQ = 共同文件第 3 段的 Y_Z + Q，DELTAF 由 DELTA SCALE FACTOR 查表，
+    逐圈、上下偵測器各一組 (即 McIDAS AREA 的 YSUBZ、RAWDELTAF；AREA 的 P = 32 x V)。
+  * Mode AAA：輻射 = (AB_k(1) x V - AB_k(0)) / 2^(15 - FAB_k)；AB、FAB 由第 3 欄第 63\~112 字組成 (20 圈輪替)，
+    k = 偵測器 / 濾鏡組合 1\~38 (表 5C1)。
+  * 輻射 -> 亮溫同 GOES-PREGVAR。
+* 導航：McIDAS 'GOES' 導航 (同 GOES-PREGVAR)，參數取自每圈文件中輪替的 O&A (20 圈一組，重複出現時取眾數)：
+  VIRGS 的 Kepler 軌道 (EPY、EPH、SMA、ECC、INC、MA、AP、RAN，與同日 McIDAS AREA 導航區塊的值相同)、
+  自旋軸 = SPRA / SPDC 在 13 小時區間內插後的反向、pitch = -ZETA、yaw = ETA (同日 AREA 的 pitch / yaw 即此值)。
+  沒有 Kepler 元素的檔案 (例如 1977/11 以前的舊 O&A 格式) 列出原因後略過。
+  照檔案內的導航參數計算、不另外修正；IR 照資料本身的掃描編號，比照 McIDAS 慣例 (線中心 = 該步第一條 VIS 線 + 3.5)，
+  不修正配準 (原始 AA 與同日 McIDAS AREA 的 IR 地球邊緣位置相同，差 0\~1 個樣本)。
+* 驗證 (PREGVAR 的 6 個樣本，2026/11)：
+  * 校正：同時次的 GOES-6 Mode AA band 8 與 Mode A IR (兩條獨立的校正路徑) 亮溫差中位數 1.3 K (冷雲 0.3 K、暖地表 1.5 K；
+    Mode A 溫度表本身的精度為 2\~4 K)。GOES-7 AAA 組出的 AB / FAB 與 McIDAS AREA 校正區塊的 IAB / IFAB 逐值相同
+    (band 8：R = 0.24 x V - 10，同文件附錄 F)。
+  * 導航 (可見光與海岸線比對，影像相對導航的位移；線、像素約 1 km)：GOES-6 Mode A / AA 偏北約 6 線、偏東 3 像素；
+    GOES-7 AAA 偏南 2\~7 線、偏東 5 像素；SMS-2 偏北約 14 線、偏西 3\~14 像素 (該檔 O&A 本身的誤差，四個區域一致)。
+    原始 O&A 導航與 1 小時前 AREA 的導航相差約 6.5 km (兩者的軌道解不同)。
+  * IR 與 VIS 的配準 (未修正)：IR 相對同一標稱位置的 VIS，南北 Mode A、AA 偏北約 10 線，AAA 偏南約 2.5 線；
+    東西偏西 6\~22 像素 (Mode A、AA)、偏東 10 像素 (AAA)，依衛星與格式而異，所以不以樣本的值修正。
+* 完整檔頭：`reader.header(scene)` 回傳 {'mode', 'records' (各記錄的文件欄位陣列), 'offsets'、'ir_pos'、'vis_pos' (區塊位置)、
+  'index_file'、'meta' (`.meta` 的內容)、'oa' (O&A), 'nav' (導航參數), 'calibration'}。
 
 ### MSG SEVIRI (Meteosat-8\~11)
 

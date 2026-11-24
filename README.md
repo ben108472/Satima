@@ -5,7 +5,7 @@ Satima-GEO (靜止衛星)、Satima-MW (微波)、Satima-PO (極軌成像儀) 的
 
 | 類別 | 資料 | 讀取器 | 詳細說明 |
 |---|---|---|---|
-| **GEO** 靜止衛星 | Himawari、GOES、GK-2A、MTG、MTSAT、COMS、GMS、Meteosat… | `sensors/geo/` (17 種格式) | [docs/GEO.md](docs/GEO.md) |
+| **GEO** 靜止衛星 | Himawari、GOES、GK-2A、MTG、MTSAT、COMS、GMS、Meteosat… | `sensors/geo/` (18 種格式) | [docs/GEO.md](docs/GEO.md) |
 | **MW** 微波輻射計 | AMSR2/3、GMI、SSMIS、SSM/I、ATMS、AMSU-A、MWRI、NASA PPS L1C… | `sensors/mw/` (12 種格式) | [docs/MW.md](docs/MW.md) |
 | **PO** 極軌成像儀 | VIIRS、MODIS、AVHRR、METimage、OLCI、SLSTR、SGLI | `sensors/po/` (8 種格式) | [docs/PO.md](docs/PO.md) |
 

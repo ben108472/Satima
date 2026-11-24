@@ -5,7 +5,7 @@ layered config files. 中文版: [README.md](README.md)
 
 | Family | Data | Readers | Details |
 |---|---|---|---|
-| **GEO** geostationary satellites | Himawari, GOES, GK-2A, MTG, MTSAT, COMS, GMS, Meteosat… | `sensors/geo/` (17 formats) | [docs/en/GEO.md](docs/en/GEO.md) |
+| **GEO** geostationary satellites | Himawari, GOES, GK-2A, MTG, MTSAT, COMS, GMS, Meteosat… | `sensors/geo/` (18 formats) | [docs/en/GEO.md](docs/en/GEO.md) |
 | **MW** microwave radiometers | AMSR2/3, GMI, SSMIS, SSM/I, ATMS, AMSU-A, MWRI, NASA PPS L1C… | `sensors/mw/` (12 formats) | [docs/en/MW.md](docs/en/MW.md) |
 | **PO** polar-orbiting imagers | VIIRS, MODIS, AVHRR, METimage, OLCI, SLSTR, SGLI | `sensors/po/` (8 formats) | [docs/en/PO.md](docs/en/PO.md) |
 

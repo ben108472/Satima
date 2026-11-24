@@ -8,7 +8,7 @@
 
 
 Supports Himawari-8/9 (AHI), GOES-16\~19 (ABI), GK-2A (AMI), MTG-I (FCI), MTSAT-1R/2 (Imager), COMS-1 (MI),
-GMS-1\~5 / GOES-9 (VISSR), GOES-8\~15 (Imager, GVAR / AREA), SMS-1/2, GOES-1\~7 (VISSR / VAS, McIDAS AREA),
+GMS-1\~5 / GOES-9 (VISSR), GOES-8\~15 (Imager, GVAR / AREA), SMS-1/2, GOES-1\~7 (VISSR / VAS, McIDAS AREA and Mode A / AA / AAA raw data),
 Meteosat-8\~11 (MSG SEVIRI, HRIT / native / NetCDF), Meteosat-2\~7 (MFG MVIRI, FCDR / NetCDF):
 single bands, IR / water vapor colormap enhancement, CIRA true color (True Color), and GeoColor, which adds night-time clouds and city lights;
 MTG's FDHSI and HRFI are listed separately, and the HRFI TrueColor is sharpened with the 0.5 km red band.
@@ -116,6 +116,8 @@ sensors/geo/              readers for each satellite, file name <sensor>-<format
   mcidas_goes_nav.py        (helper) McIDAS 'GOES' navigation (spin scan, same as nvxgoes / VisAD GOESnav) and exact inverse
   mcgoes_nav_cy.pyx         (helper) Cython version of the above
   pregvar_area_format.py    (helper) format definitions copied verbatim from the old AREA_format.py
+  GOES-STRETCHED.py         SMS-1/2, GOES-1~7 Mode A / AA / AAA raw stretched data (NCEI 2024: *.A.data, *.AA-MSI.data, *.AAA-DS.data...)
+  stretched_format.py       (helper) Mode A / AA / AAA record layout, documentation fields, O&A, calibration, plus the VAS band table and brightness-temperature coefficients (shared with GOES-PREGVAR)
   SEVIRI-HRIT.py            MSG SEVIRI EUMETSAT HRIT (H-000-MSG*, including -C_ compressed and .bz2)
   SEVIRI-NAT.py             MSG SEVIRI Level 1.5 native (MSG?-SEVI-MSG15-*.nat, or the Data Store .zip without unpacking)
   SEVIRI-NC.py              MSG SEVIRI Level 1.5 NetCDF (W_XX-EUMETSAT-Darmstadt,...SEVIRI_C_EUMG_*.nc) — no sample yet to validate with
@@ -624,6 +626,67 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
 * The navigation of this era itself has errors of several km (visible coastlines: north-south +2\~+6 km, east-west -7\~+2 km, varying from image to image); the McIDAS formulas are followed with no further correction.
 * Files whose navigation block has no orbit parameters (e.g. GOES-1 and GOES-3 in 1979, which McIDAS cannot navigate either) are skipped after the reason is listed.
 * Full header: `reader.header(scene, 'B08')` returns the AREA directory, navigation block, AAA calibration block, per-line prefix data (_Data_Block) and the band table.
+
+### SMS, GOES-1\~7 raw data (Mode A / AA / AAA)
+
+* File names (NCEI 2024 reprocessed version, NOAA CLASS): `goesNN.YYYY.DDD.HHMM.A.data`, `.AA-MSI.data`, `.AA-DS.data`, `.AAA-MSI.data`,
+  `.AAA-DS.data`, `smsNN.YYYY.DDD.HHMM.A.data`. One file = one data entry (VIS and IR are in the same file); the format column of the data list
+  shows MODE A, MODE AA-MSI… (MSI = multispectral imaging, DS = dwell sounding).
+* The format follows NOAA's format documents: for Mode A the NCC 1978 VISSR Digital Archive Users' Guide and the 1982/10 Modified IR Documentation,
+  for Mode AA the Output Format Rev. B / C, for Mode AAA SFP 002 v2.5A (1987/09). One record in the files = one revolution (0.6 s) with the sync codes removed:
+
+  | | Record | IR | VIS |
+  |---|---|---|---|
+  | Mode A | 99244 bytes | documentation 128 words + 3818 samples, 9-bit words (1 flag bit + 8 bits) | 8 sectors x (documentation 512 words + 15288 samples), 6 bits |
+  | Mode AA | 109536 bytes | IR1 and IR2 each: documentation 16 + video 3822 + EOLC 8 + common documentation 2048 words, 10 bits | same |
+  | Mode AAA | 109516 bytes | two IR blocks each: documentation 16 + video 3822 + EOLC 8 + common documentation 512 + gridding 1024 + Mode A documentation 128…, 10 bits | same |
+
+  Records are occasionally incomplete (one record in the AA-DS sample lacks VIS sector 1 and the following blocks are shifted forward; one damaged record without IR1
+  in AAA-MSI; truncated records at the end of a file): when a `.indx` with the same name (the block index shipped by CLASS) exists, blocks are located from it one by one,
+  so incomplete records can be read; otherwise records are located by the VIS sector codes and only complete records are used (the block positions of both methods are
+  identical for the 6 samples; `.indx` recovers 3 incomplete records). Neither `.indx` nor `.meta` is required.
+  The navigation source (`navigation_source`, native = O&A of the original data stream for all samples) and the O&A mode (identical to what the reader assembles)
+  in `.meta` (JSON) are only put into `header()`.
+  Positions 3819\~3822 of the Mode A IR are end-of-line markers and are NaN.
+* Bands: Mode A has `VIS` and `IR`; Mode AA / AAA have `VIS` and VAS `BAND-01`\~`BAND-12`. The filter wheel position (predicted header) of each revolution
+  determines its band: MSI rotates e.g. 8, 7, 8, 7, 8, 10, 8, 10 (band 8 every second revolution, bands 7 / 10 every fourth); DS dwells on some scan steps
+  and takes the bands in turn; when the same band has several revolutions at the same step the radiances are averaged.
+  Calibration revolutions (submode 4) and revolutions whose frame code is not picture are not used.
+* VIS line numbers (1-based; the 8 lines of scan N = (N-1) x 8 + 1 \~ + 8, as in McIDAS AREA):
+  the VIS documentation of every AAA sector (words 9\~12) records the scan count N directly, sector j = line j+1; AA follows Rev. C Table 2:
+  sectors 0\~3 = V5\~V8 of scan N, sectors 4\~7 = V1\~V4 of scan N+1; Mode A: comparing Mode A and Mode AA of the same time
+  (GOES-6 1985/09/24 20:31) sector by sector, sector k of Mode A scan s = sector k of AA scan s-1 (all 400 lines match), so it is numbered like AA
+  (line (s-2) x 8 + 5 + k).
+* IR line positions (scan steps, one step = 8 VIS lines): for Mode A the scan count of the record. VAS has an upper (IR1) and a lower (IR2) detector per revolution:
+  small detectors (small HgCdTe) lower = upper + 1 step; large detectors (large HgCdTe, InSb) cover 2 steps each, lower = upper + 4 steps.
+  The AAA IR documentation records the adjusted earth count already corrected for the upper/lower detector offset; AA has no such field and the same
+  arrangement was measured by image correlation. DS bands on the small detectors cover only half of the scan steps; the gaps are filled from the nearest line
+  (at most 2 steps, as McIDAS AREA repeats the most recent revolution).
+* Calibration:
+  * VIS: reflectance = (count / 63)^2 (same as GOES-PREGVAR).
+  * Mode A IR: NCC 1978 Appendix II, 330 - c/2 for counts < 176, otherwise 418 - c (K).
+  * Mode AA: radiance = (32 x V - YZQ) x 2^(F + DELTAF - 15); YZQ = Y_Z + Q of section 3 of the common documentation, DELTAF looked up from the
+    DELTA SCALE FACTOR, one set per revolution for each of the upper and lower detectors (the YSUBZ, RAWDELTAF of McIDAS AREA; the AREA P = 32 x V).
+  * Mode AAA: radiance = (AB_k(1) x V - AB_k(0)) / 2^(15 - FAB_k); AB and FAB are assembled from words 63\~112 of field 3 (multiplexed over 20 revolutions),
+    k = detector / filter combination 1\~38 (Table 5C1).
+  * Radiance -> brightness temperature as in GOES-PREGVAR.
+* Navigation: McIDAS 'GOES' navigation (same as GOES-PREGVAR), with parameters from the O&A multiplexed in the documentation of each revolution
+  (a set every 20 revolutions; the most frequent value is used when repeated): the VIRGS Kepler orbit (EPY, EPH, SMA, ECC, INC, MA, AP, RAN, the same values as the
+  McIDAS AREA navigation block of the same day), the spin axis = the reverse of SPRA / SPDC interpolated over the 13-hour interval, pitch = -ZETA, yaw = ETA
+  (the pitch / yaw of the AREA of the same day are exactly these values). Files without Kepler elements (e.g. the old O&A format before 1977/11) are skipped after the reason is listed.
+  The navigation parameters in the file are used as they are, without further correction; IR follows the scan numbering of the data itself in the McIDAS convention
+  (line center = first VIS line of the step + 3.5), and the registration is not corrected (the IR earth-edge positions of the raw AA and the McIDAS AREA of the same day are the same, within 0\~1 sample).
+* Validation (the 6 PREGVAR samples, 2026/11):
+  * Calibration: the brightness temperatures of GOES-6 Mode AA band 8 and Mode A IR of the same time (two independent calibration paths) differ by a median of 1.3 K
+    (0.3 K for cold clouds, 1.5 K for warm land; the Mode A temperature table itself is accurate to 2\~4 K). The AB / FAB assembled from GOES-7 AAA are identical,
+    value by value, to IAB / IFAB of the McIDAS AREA calibration block (band 8: R = 0.24 x V - 10, as in Appendix F of the document).
+  * Navigation (visible vs coastlines, shift of the image relative to the navigation; a line or pixel is about 1 km): GOES-6 Mode A / AA about 6 lines north, 3 pixels east;
+    GOES-7 AAA 2\~7 lines south, 5 pixels east; SMS-2 about 14 lines north, 3\~14 pixels west (an error of that file's O&A itself, consistent over four regions).
+    The raw O&A navigation differs from the AREA navigation of one hour earlier by about 6.5 km (the two have different orbit solutions).
+  * IR vs VIS registration (not corrected): relative to the VIS at the same nominal position, IR is about 10 lines north for Mode A and AA and about 2.5 lines south for AAA;
+    east-west it is 6\~22 pixels west (Mode A, AA) and 10 pixels east (AAA), varying with satellite and format, so it is not corrected with values from the samples.
+* Full header: `reader.header(scene)` returns {'mode', 'records' (arrays of the documentation fields of each record), 'offsets', 'ir_pos', 'vis_pos' (block positions),
+  'index_file', 'meta' (contents of `.meta`), 'oa' (O&A), 'nav' (navigation parameters), 'calibration'}.
 
 ### MSG SEVIRI (Meteosat-8\~11)
 

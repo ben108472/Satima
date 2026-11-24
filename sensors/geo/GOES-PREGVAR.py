@@ -29,6 +29,7 @@ import re
 import numpy as np
 
 import pregvar_area_format as fmt
+import stretched_format as sf
 from goes_imager import sector_label
 from mcidas_goes_nav import McGoesNav, params as nav_params
 from satima.core.i18n import tr
@@ -43,22 +44,10 @@ _NAME = re.compile(r'^(goes|sms)(\d\d)\.(\d{4})\.(\d{3})\.(\d{4})(?:-(\d+))?\.AR
 IR_LINE_OFFSET = 3.5
 IR_ELE_OFFSET = 0.
 
-# VAS 波段：(中心波長 µm、種類、功能代稱)
-_VAS = {1: (14.73, 'ir', 'CO2 LW'), 2: (14.48, 'ir', 'CO2 LW'), 3: (14.25, 'ir', 'CO2 LW'), 4: (14.01, 'ir', 'CO2 LW'),
-        5: (13.33, 'ir', 'CO2 LW'), 6: (4.525, 'swir', 'CO2 SW'), 7: (12.66, 'ir', 'Dirty LW Window'),
-        8: (11.17, 'ir', 'LW Window'), 9: (7.261, 'wv', 'Lower-level Water Vapor'), 10: (6.725, 'wv', 'Water Vapor'),
-        11: (4.444, 'swir', 'CO2 SW'), 12: (3.945, 'swir', 'Shortwave Window')}
-# 輻射 (mW/(m2 sr cm-1)) -> 亮溫 的係數 (舊版 goes_pregvar_tools.py)
-_FK1 = (.37407E+4, .39157E+4, .40871E+4, .43417E+4, .50296E+4, .12819E+6, .58519E+4, .84911E+4, .30936E+5, .38873E+5,
-        .13611E+6, .19511E+6)
-_FK2 = (.97802E+3, .99304E+3, .10073E+4, .10278E+4, .10795E+4, .31767E+4, .11354E+4, .12853E+4, .19778E+4, .21343E+4,
-        .32408E+4, .36542E+4)
-_TC1 = (-.89414E-3, .24306E-2, .24917E-2, .34902E-2, .39097E-2, .66916E-1, .63888E-2, .34408, .70558E-1, .78113,
-        .58431E-1, .43968)
-_TC2 = (.99998, .99995, .99995, .99993, .99993, .99983, .99991, .99722, .99973, .99717, .99986, .99903)
-# VAS mode AA：各波段的放大位數 F 與 RAWDELTAF (低 4 位元) -> DELTAF
-_F_AA = (8, 8, 8, 8, 8, 4, 8, 8, 7, 7, 4, 2)
-_DELTAF = (0, -1, -2, -3, -4, -5, 0, 0, 0, 1, 2, 3, 4, 5, 0, 0)
+# VAS 波段 (中心波長、種類、功能代稱)、輻射 -> 亮溫係數 (舊版 goes_pregvar_tools.py)、mode AA 的放大位數 F 與
+# RAWDELTAF -> DELTAF 查表：與 GOES-STRETCHED 共用，定義在 sensors/stretched_format.py
+_VAS, _F_AA, _DELTAF = sf.VAS_BANDS, sf.F_AA, sf.DELTAF
+_brightness_temperature = sf.brightness_temperature
 
 
 def _dt(dt, order):
@@ -130,13 +119,6 @@ class AreaFile:
                 lev = None
             self._prefix = (blk, lev)
         return self._prefix
-
-
-def _brightness_temperature(rad, band):
-    i = band - 1
-    with np.errstate(divide='ignore', invalid='ignore'):
-        teff = _FK2[i] / np.log(_FK1[i] / rad + 1.)
-    return np.where(rad > 0, (teff - _TC1[i]) / _TC2[i] - 273.15, np.nan)
 
 
 class GoesPreGvarReader(GeoReader):
