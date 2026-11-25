@@ -626,7 +626,8 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
   used floating-point division for ietimh, NUMSEN and the scan count and differs from McIDAS by about 11 km on average (what the old reader actually loaded was nav.pyd).
 * IR is sampled once per revolution; the AREA IR line number = the first visible line of that revolution, and the pixel center is taken at +3.5 lines (the middle of the 8 visible lines).
   Comparing visible / IR cloud edges of the same time slot in 27 regions gives +3.25\~+8 lines in every case; east-west it is +7 pixels in 1988 and -3 pixels in 1994, which is the registration error of the time and is not corrected.
-* The navigation of this era itself has errors of several km (visible coastlines: north-south +2\~+6 km, east-west -7\~+2 km, varying from image to image); the McIDAS formulas are followed with no further correction.
+* The navigation of this era itself has errors of several km (visible coastlines: north-south +2\~+6 km, east-west -7\~+2 km, varying from image to image;
+  GOES-4 1982/08/06 east-west +12\~+13 km); the McIDAS formulas are followed with no further correction.
 * Files whose navigation block has no orbit parameters (e.g. GOES-1 and GOES-3 in 1979, which McIDAS cannot navigate either) are skipped after the reason is listed.
 * AREA_VIS files produced from VAS mode AA (directory memo 'AA transcribed archive data', independent of the file name) have line numbers one scan smaller than the AREA_IR
   of the same set, the Mode A AREA of the same time and the raw data (8 lines, about 8 km; SSEC numbered the lines by the scan count of the AA record header); 8 is added to
@@ -654,16 +655,28 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
   so incomplete records can be read; otherwise records are located by the VIS sector codes and only complete records are used (the block positions of both methods are
   identical for the 6 samples; `.indx` recovers 3 incomplete records). When the sector codes themselves have bit errors, a record right after the previous one with at least
   6 of its 8 sector codes correct is also accepted (scans 1267 and 1670 of SMS-2 1979/08/31 12:30; SSEC's AREA has these two revolutions with the same contents). Neither `.indx` nor `.meta` is required.
-  The navigation source (`navigation_source`, native = O&A of the original data stream for all samples) and the O&A mode (identical to what the reader assembles)
-  in `.meta` (JSON) are only put into `header()`.
+  The navigation source (`navigation_source`: native = O&A of the original data stream; GOES-1 1979/05/10 06:30 has SYSNAV, a navigation transplanted by NCEI
+  with only one spin axis, see "Navigation" below) and the O&A mode (identical to what the reader assembles) in `.meta` (JSON) are only put into `header()`.
+  In some NCEI files (`processing_stages` of `.meta` contains zero-padded) truncated blocks are padded with zeros to full length, and `truncated_line_bits`
+  records {`.indx` line number (1-based): number of valid bits}; with `.indx` and `.meta` present the samples of each block after the valid bits are NaN
+  (conversion: VIS (bits - 3072) / 6, Mode A IR bits / 9 - 128, AA / AAA IR bits / 10 - 16; for 149 blocks in the samples this equals where the zeros actually start).
+  Otherwise the padded visible would be reflectance 0 (black lines) and the padded Mode A infrared 330 K. When an AA / AAA IR1 block is cut before its common
+  documentation, the IR of that record is not used (the scan count and calibration coefficients are in the common documentation). GOES-5 1982/05/06 18:31 AA-MSI
+  has 152 truncated blocks (116 VIS sectors, 23 IR2), the Mode A files of GOES-3, GOES-4 and GOES-5 2\~10 each.
   Positions 3819\~3822 of the Mode A IR are end-of-line markers and are NaN.
 * The data list reads only the first 160 records (40 for Mode A) and the last 16 records of each file (time, bands, range); the file is parsed in full when drawing:
   the documentation of the records is spread over the whole file, and reading all of it takes 3\~5 s per file on a cold hard disk versus about 0.3 s for the head and tail;
   VAS bands all appear at the start of the file (first 14 records for MSI, 57 for DS in the samples), and the list is the same as with a full parse.
 * Bands: Mode A has `VIS` and `IR`; Mode AA / AAA have `VIS` and VAS `BAND-01`\~`BAND-12`. The filter wheel position (predicted header) of each revolution
   determines its band: MSI rotates e.g. 8, 7, 8, 7, 8, 10, 8, 10 (band 8 every second revolution, bands 7 / 10 every fourth); DS dwells on some scan steps
-  and takes the bands in turn; when the same band has several revolutions at the same step the radiances are averaged.
+  and takes the bands in turn; when the same band has several revolutions at the same step the radiances are averaged (each revolution is converted to radiance
+  with its own calibration coefficients first; SSEC's AREA averages the counts directly while Y_Z + Q differs between the revolutions of a dwell, so repeatedly
+  observed bands differ from SSEC by a median of 0.1\~0.4 K; for band 8 SSEC takes only the last revolution).
   Calibration revolutions (submode 4) and revolutions whose frame code is not picture are not used.
+* The VISSR mode of VAS (`.AAA` without -MSI / -DS in the file name; bit 9 of word 24 of common documentation field 2 = 0, e.g. GOES-6 1987/07/02 17:15)
+  has only `BAND-08`: both IR blocks are band-8 small detectors (the predicted header is the ordinary $38, not the $80 given in the document). The adjusted earth count
+  of the lower detector is 1 more than that of the upper detector, but its image matches the upper detector 4 steps further south (the correlation peaks at +4 steps,
+  symmetric on both sides, in three parts of the image), so only the upper detector is used (one line per revolution, as in Mode A and SSEC's AREA, identical pixel by pixel).
 * VIS line numbers (1-based; the 8 lines of scan N = (N-1) x 8 + 1 \~ + 8, as in McIDAS AREA; s / N = scan count of the record, k / j = sector 0\~7):
   * AAA: (N-1) x 8 + 1 + j. The VIS documentation of every sector (words 9\~12) records the scan count N directly (Table 9); identical, line by line,
     to the SSEC AREA_VIS from CLASS.
@@ -678,18 +691,34 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
     pregvar's README gives an AA offset of -4 (= 8 (N-1) + j - 3), another 8 lines north of the CLASS AREA (it compared with SSEC-internal AREA1100/2200).
   * Basis: with this numbering the north-south IR vs VIS registration of GOES-6 Mode A, AA and SMS-2 is within 2 lines (AAA +2 lines) and the visible
     coastline residuals are smallest; taking Rev. C Table 2 literally (sectors 0\~3 belong to the record's scan N, i.e. the SSEC AA AREA arrangement) gives
-    registration errors of 9\~11 lines and coastline residuals of -6 and -14 lines.
+    registration errors of 9\~11 lines and coastline residuals of -6 and -14 lines. Mode A and AA of GOES-5 1982/07/02 17:01 also have the same coastline residuals (+2/+3, +1/+4).
+  * When a line has several records: Mode A takes the first and AA / AAA the last (repeated records at the end of a frame; both identical pixel by pixel to SSEC's AREA).
+    AA DS dwell records (submode 2) already carry the incremented scan count, but their visible is still the line of the previous revolution (85 dwells of GOES-5 1982
+    and GOES-6 1985: every record except the last (stepping) one correlates about 0.9 with the previous revolution and about 0.15 with the last record), so they are not used;
+    SSEC's AA-DS AREA_VIS also uses the last record of each dwell. The infrared, however, is at the position of the scan count (band 8 of the large detectors in a dwell
+    correlates best, 0.98, with band 8 of the small detectors of normal scans at 0 steps). AAA dwell records have their visible on the current revolution
+    (correlation 0.9 with the last record) and are used as usual.
 * IR line positions (scan steps, one step = 8 VIS lines): for Mode A the scan count of the record. VAS has an upper (IR1) and a lower (IR2) detector per revolution:
   small detectors (small HgCdTe) lower = upper + 1 step; large detectors (large HgCdTe, InSb) cover 2 steps each, lower = upper + 4 steps.
   The AAA IR documentation records the adjusted earth count already corrected for the upper/lower detector offset (plus the file median of
-  (predicted scan count - earth count); the VISSR-mode `.AAA` leaves it empty and uses the rule above); AA has no such field and the same
+  (predicted scan count - earth count); the rule above is used when the field is 0); AA has no such field and the same
   arrangement was measured by image correlation (pregvar also confirmed it with SSEC's AREA). DS bands on the small detectors cover only half of the
   scan steps; the gaps are filled from the nearest line (at most 2 steps, as McIDAS AREA repeats the most recent revolution).
   Bit errors in the scan count: when the previous and next records are consecutive scans and this one deviates by more than 20, it is set to the scan in between
   (scans 670 and 940 of SMS-2 12:30 read 2673, and SSEC's AREA has these two revolutions with the same contents; scan 946 of GOES-6 AA-MSI 20:31 reads 4023,
   SSEC's AREA is blank there and the adjacent lines are continuous); other records differing by more than 20 from the median of the 9 neighbouring records are not used.
 * Calibration:
-  * VIS: reflectance = (count / 63)^2 (same as GOES-PREGVAR).
+  * VIS: reflectance = (count / 63)^2 (same as GOES-PREGVAR). The Mode AA visible is the value converted by the ground processor (VIP) with the visible
+    nonlinearity coefficients of the calibration parameters (words 77\~110 of section 3 of the common documentation, information bytes 585\~648 multiplexed over
+    20 revolutions, 4 coefficients c_j x 2^15 per detector): Y = 63 Σ c_j (d/63)^j. The coefficients of GOES-6 1985 are the identity (Y = d, as bright as Mode A
+    of the same time); for GOES-5 1982 (the same set on 05/06 and 07/02) the linear term is about 0.5 and the visible is about half of the Mode A of the same time (at most 33, reflectance about 1/4;
+    SSEC's AREA is the same). When reading, the in-file coefficients are inverted back to the original count d before the reflectance is computed (no Mode A is needed),
+    using the mean of the 8 detectors' coefficients because the detector-to-line assignment cannot be confirmed from the data (compared with Mode A of the same time,
+    all 8 arrangements agree within 0.15 count); identity, incomplete or implausible coefficients leave the data unchanged. After the inversion the mean reflectance
+    of GOES-5 1982/07/02 and 05/06 is 0.27 and 0.22 (Mode A 0.29 and 0.24). The detector striping of AA itself (8-line period, about ±2 counts; Mode A has almost none)
+    is the same before and after and becomes more visible once the brightness is restored. GOES-PREGVAR reading SSEC's AA AREA has no such coefficients and keeps the
+    data as they are (dark). The AAA visible coefficients (words 57\~62 of field 3, with additional scale factors FV) are inconsistent in the samples (GOES-6 1987 close
+    to identity, GOES-7 1988 / 1989 with large negative constant terms, 1994 all 0) and there is no Mode A of the same time to verify them, so AAA data are used as they are.
   * Mode A IR: NCC 1978 Appendix II, 330 - c/2 for counts < 176, otherwise 418 - c (K).
   * Mode AA: radiance = (32 x V - YZQ) x 2^(F + DELTAF - 15); YZQ = Y_Z + Q of section 3 of the common documentation, DELTAF looked up from the
     DELTA SCALE FACTOR, one set per revolution for each of the upper and lower detectors (the YSUBZ, RAWDELTAF of McIDAS AREA; the AREA P = 32 x V).
@@ -699,7 +728,9 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
 * Navigation: McIDAS 'GOES' navigation (same as GOES-PREGVAR), with parameters from the O&A multiplexed in the documentation of each revolution
   (a set every 20 revolutions; the most frequent value is used when repeated): the VIRGS Kepler orbit (EPY, EPH, SMA, ECC, INC, MA, AP, RAN, the same values as the
   McIDAS AREA navigation block of the same day), the spin axis = the reverse of SPRA / SPDC interpolated over the 13-hour interval, pitch = -ZETA, yaw = ETA
-  (the pitch / yaw of the AREA of the same day are exactly these values). Files without Kepler elements (e.g. the old O&A format before 1977/11) are skipped after the reason is listed.
+  (the pitch / yaw of the AREA of the same day are exactly these values). Without a second spin axis (DATE1 = 0 or SPRA2 = SPDC2 = 0; e.g. the SYSNAV navigation
+  transplanted into GOES-1 1979/05/10 06:30, whose O&A blocks 1, 9 and 10 are all 0) SPRA1 / SPDC1 are used directly.
+  Files without Kepler elements (e.g. the old O&A format before 1977/11) are skipped after the reason is listed.
   The navigation parameters in the file are used as they are, without further correction; IR follows the scan numbering of the data itself in the McIDAS convention
   (line center = first VIS line of the step + 3.5), and the registration is not corrected (the IR earth-edge positions of the raw AA and the McIDAS AREA of the same day are the same, within 0\~1 sample).
 * Validation (the PREGVAR samples, 2026/11):
@@ -711,18 +742,35 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
   * IR vs VIS registration (not corrected): relative to the VIS at the same nominal position, IR is within 2 lines north-south (Mode A, AA 1\~2 lines north,
     AAA 2 lines south); east-west it is 6\~22 pixels west (Mode A, AA) and 10 pixels east (AAA), varying with satellite and format, so it is not corrected with values from the samples.
     Mode A IR and AA band 8 of the same time are on the same scan step (correlation 0.989), 2 IR samples apart east-west.
+  * Visible coastlines of the second batch (`D:\github\PREGVAR\new`; lines / pixels, regions with the higher correlation): GOES-3 1979 +2/+2;
+    GOES-5 1982/07/02 Mode A and AA both +2/+3, +1/+4; GOES-6 1987 AAA +2/+9, +4/+7; GOES-4 1982/08/06 +5/+16, +5/+18 (SSEC's navigation also gives +3/+12, +3/+13,
+    an error of the O&A of the time); GOES-6 1983/10/11 00:15 +9/+3, +13/+5 (no AREA of the same time to compare). The sub-satellite point of GOES-1 1979/05/10 06:30
+    is at 59° E (its Indian Ocean position during FGGE); the coastline contrast is too weak to quantify.
 * Pixel-by-pixel comparison with SSEC AREA (AREA_VIS / AREA_IR of the same time from CLASS: SMS-2 1979/08/31 12:30 Mode A, GOES-6 1985/09/24 20:31 Mode A and
-  AA-MSI, GOES-7 1989/09/15 18:01 AAA-MSI; plus the GOES-6 19:31 AA AREA_IR in `D:\GOES7\CIMSS`):
+  AA-MSI, GOES-7 1989/09/15 18:01 AAA-MSI; plus the GOES-6 19:31 AA AREA_IR in `D:\GOES7\CIMSS`. Second batch: GOES-3 1979/08/22 17:15 A, GOES-4 1982/08/06 18:15 A,
+  GOES-5 1982/05/06 18:31 A and AA-MSI, 18:48 AA-DS, 1982/07/02 17:01 A and AA-MSI, GOES-6 1987/07/02 17:15 AAA (VISSR mode), GOES-7 1988/09/13 22:01 and 1994/08/23 00:01
+  AAA-MSI (AREA in `D:\GOES7\PY`), SMS-2 1980/08/07 17:30 A (IR only)):
   * VIS: every common line is identical pixel by pixel (11172\~13524 lines); Mode A and AAA have the same line numbers, the AA AREA line number = this one - 8.
     SSEC additionally has scans 709\~710 of SMS-2 (one record missing, one damaged) and scan 1120 of GOES-7 (the damaged record without IR1), 23 lines in all, which are not read here.
+    The second batch is identical as well; the AREA line numbers of GOES-5 AA-MSI and AA-DS are also this one - 8 (a second satellite confirming the + 8 correction of GOES-PREGVAR).
+    The directory of the AA-DS AREA_VIS gives 1640 lines but the file holds only 1604 (the AREA_IR also lacks 1 row); where a dwell lacks its stepping record SSEC put a dwell
+    record (the previous line) and this reader leaves the line empty.
   * IR: for every format, band and upper/lower detector the positions are the same as in AREA_IR (AREA line = 8 (step - 1) + 1, element = 1 + 4 x sample, no offset);
     brightness temperatures are identical pixel by pixel to those GOES-PREGVAR computes from the AREA (difference 0.000 K: the same brightness table for Mode A,
-    identical YSUBZ / RAWDELTAF for AA and IAB / IFAB for AAA); differences occur only in a few space-edge rows and damaged records (< 0.13 %).
+    identical YSUBZ / RAWDELTAF for AA and IAB / IFAB for AAA); differences occur only in a few space-edge rows and damaged records (< 0.13 %). The positions of the
+    second batch are all the same too; the brightness temperatures of GOES-5 1982/07/02 AA-MSI are identical pixel by pixel (B10 100 %, B07 / B08 99.9 %, differing only
+    in the northernmost / southernmost 2\~3 rows of the frame and one damaged record); DS bands observed once (bands 5, 10, 12) are identical, repeatedly observed bands
+    are averaged differently (see "Bands" above). GOES-5 1982/05/06 18:31 AA-MSI has 23 truncated IR2 blocks: SSEC's AREA holds the same truncated data (same counts,
+    zeros afterwards) but calibrated them with the zero-padded common documentation of the IR2 block (Y_Z + Q = 0), so these rows differ from the adjacent rows by
+    20\~34 K; here the calibration coefficients come from the intact IR1 common documentation (which holds the values of both IR1 and IR2) and the rows differ from
+    their neighbours by 2\~7 K. All other rows are identical pixel by pixel (over 99 %).
   * Navigation: SSEC's navigation blocks differ from the parameters here in two respects; everything else (the other orbit elements, pitch, yaw, spin period) is the same.
-    1. The semi-major axis is always 1.87 km larger (+187 x 10 m for all three satellites), shifting the image 4.6\~5.7 pixels (about 4 km) east-west. The independent
+    1. The semi-major axis is always 1.87 km larger (+187 x 10 m for SMS-2 and GOES-3\~7), shifting the image 3\~5.7 pixels (about 4 km) east-west. The independent
        Chebyshev ephemeris in the O&A gives satellite longitudes that agree with the value here (without the addition: GOES-7 0.005°, GOES-6 0.02°, SMS-2 0.04°),
-       while adding it makes them differ by 0.02\~0.09°, so it is not adopted; the east-west coastline residual is -2\~0 pixels with SSEC and +3\~+5 here, other errors happening to cancel.
-    2. Spin axis: SSEC's Mode A block takes SPRA1 / SPDC1 at TIME1 (10 hours earlier) without interpolation, 1.6\~2.2 lines different north-south;
+       while adding it makes them differ by 0.02\~0.09°, so it is not adopted. The east-west coastline residuals here are mostly positive (+2\~+9 pixels, GOES-4 +16) and
+       SSEC's are 4\~5 pixels smaller (first batch -2\~0, second batch GOES-3 -2, GOES-6 1987 +4 / 0, GOES-4 +12); judged by coastlines SSEC's value is better, but it
+       disagrees with the O&A ephemeris, so the file parameters are kept.
+    2. Spin axis: SSEC's Mode A block takes SPRA1 / SPDC1 at TIME1 (10 hours earlier) without interpolation, 1.6\~2.2 lines different north-south (second batch 0.1\~1.7 lines);
        the interpolated values here agree between the A and AA O&A sets (different TIME1) within 0.6 line, and the coastline residuals are smaller (Mode A +1, +2 lines vs SSEC +3, +4).
     For AA, SSEC and this reader agree within 0.5 line at the same line number, so SSEC's AA visible (8 lines fewer) lands one scan to the north (coastline residuals -7, -6 lines);
     with the +8 lines applied by GOES-PREGVAR they become +2, +2 lines.
@@ -731,7 +779,9 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
   the AA VIS line numbers differ (see above).
   pregvar has no IR calibration (it returns raw counts) and uses navigation only for GOES-1 (it needs SSEC-internal navigation blocks); it also has a Mode A VIS destriper.
   pregvar notes that the Mode AA IR calibrate multiplier (IR documentation words 14\~15) changes mid-frame in a few files (e.g. GOES-5 1982/07/02 17:01);
-  the multiplier is 1 ($8000) in the samples here, so that case is not yet validated.
+  in fact the multiplier changes every revolution in all AA samples (line-by-line normalisation of the S/DB, about $1550\~$15CF for MSI), and Y_Z + Q and the
+  DELTA SCALE FACTOR of the common documentation used for the calibration already include it: the brightness temperatures of GOES-5 1982/07/02 17:01 are identical
+  pixel by pixel to SSEC's AREA (see above).
 * Full header: `reader.header(scene)` returns {'mode', 'records' (arrays of the documentation fields of each record), 'offsets', 'ir_pos', 'vis_pos' (block positions),
   'index_file', 'meta' (contents of `.meta`), 'oa' (O&A), 'nav' (navigation parameters), 'calibration'}.
 

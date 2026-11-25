@@ -6,9 +6,11 @@
   Mode A     VIS (6 位元，15288 像素) 與 IR (8 位元已校正計數值，3818 個有效樣本)，每圈一條 IR 線。
   Mode AA    VIS 與 VAS 的 BAND-01~12：每圈的濾鏡輪位置決定波段 (MSI 例如 8、7、8、7、8、10、8、10 輪替；
   Mode AAA   DS (dwell sounding) 在部分掃描步駐留、依序取 12 個波段)，上下兩個偵測器各一條線。
-             同一波段、同一步有多圈 (DS 駐留) 時輻射取平均。
+             同一波段、同一步有多圈 (DS 駐留) 時輻射取平均 (各圈用自己的校正係數；SSEC AREA 則平均計數值)。
+             VAS 的 VISSR 模式 (.AAA，沒有 -MSI / -DS) 只有 BAND-08，只用上偵測器 (IR1)。
 校正：
-  VIS        反射率 = (計數值 / 63)^2 (同 GOES-PREGVAR：平方根編碼、無絕對校正)。
+  VIS        反射率 = (計數值 / 63)^2 (同 GOES-PREGVAR：平方根編碼、無絕對校正)。Mode AA 先以檔內的可見光非線性係數
+             反算地面處理器的換算 (GOES-5 1982 斜率約 0.5；係數為恆等時不變；見 stretched_format.vis_inverse)。
   Mode A IR  NCC 1978 附錄 II：計數值 < 176 為 330 - c/2，否則 418 - c (K)。
   Mode AA    輻射 = (32 x V - YZQ) x 2^(F + DELTAF - 15)；YZQ = 共同文件第 3 段的 Y_Z + Q、DELTAF 由 DELTA SCALE FACTOR 查表，
              逐圈、上下偵測器各一組 (同 McIDAS AREA 的 YSUBZ / RAWDELTAF；AREA 的 P = 32 x V)。
@@ -84,17 +86,27 @@ class _Info:
         self.params = sf.nav_params(self.oa, self.yyddd, self.seconds, self.scan0)
         # VIS 線號
         base = {'A': -3, 'AA': 5, 'AAA': -7}[lay.mode]              # 掃描 s 段 0 的線號 = 8 s + base
-        have = f.vis_pos[frame] >= 0                                 # 不完整的記錄可能缺某幾段
+        vf = frame
+        if lay.mode == 'AA':
+            # AA DS 駐留 (submode 2) 的記錄掃描數已加 1，可見光卻仍是前一圈的線 (樣本 GOES-5 1982、GOES-6 1985 每段駐留
+            # 除最後一筆 (步進) 外皆如此)：不用。AAA DS 駐留的可見光在本圈，照常使用。
+            vf = frame[m['submode'][frame] != 2]
+        have = f.vis_pos[vf] >= 0                                    # 不完整的記錄可能缺某幾段
         if not have.any():
             raise ValueError(tr('沒有可見光資料', 'no visible data'))
-        lines = ((8 * m['scan'][frame] + base)[:, None] + np.arange(8))[have]
-        recs = np.repeat(frame[:, None], 8, axis=1)[have]
-        secs = np.repeat(np.arange(8)[None, :], len(frame), axis=0)[have]
+        lines = ((8 * m['scan'][vf] + base)[:, None] + np.arange(8))[have]
+        recs = np.repeat(vf[:, None], 8, axis=1)[have]
+        secs = np.repeat(np.arange(8)[None, :], len(vf), axis=0)[have]
         first, last = int(lines.min()), int(lines.max())
         self.vis_first = first
         self.vis_rec = np.full(last - first + 1, -1, np.int64)
         self.vis_sec = np.zeros(last - first + 1, np.int64)
-        uniq, idx = np.unique(lines, return_index=True)             # 同一線出現多次 (DS 駐留) 時取第一圈
+        # 同一線出現多次：Mode A 取第一圈、AA / AAA 取最後一圈 (畫格末端重複的記錄；兩者皆與 SSEC AREA 逐像素相同)
+        if lay.mode == 'A':
+            uniq, idx = np.unique(lines, return_index=True)
+        else:
+            uniq, idx = np.unique(lines[::-1], return_index=True)
+            idx = len(lines) - 1 - idx
         self.vis_rec[uniq - first] = recs[idx]
         self.vis_sec[uniq - first] = secs[idx]
         # IR：各波段的 (記錄, 槽位, 第一步, 步數)
@@ -102,7 +114,10 @@ class _Info:
         if lay.mode == 'A':
             self.bands[0] = [(int(r), 0, int(m['scan'][r]), 1) for r in frame]
         else:
-            for slot in range(len(lay.ir_slots)):
+            # VAS 的 VISSR 模式 (第 24 字 bit 9 = 0；GOES-6 1987/183 的 .AAA)：IR1、IR2 都是 band 8 小偵測器，IR2 的
+            # adjusted earth count 比 IR1 多 1，影像卻與南 4 圈的 IR1 相符 -> 只用 IR1 (每圈一條，同 Mode A 與 SSEC AREA)
+            vissr = np.mean((m['vasmode'][frame] & 2) == 0) > .5
+            for slot in range(1 if vissr else len(lay.ir_slots)):
                 for r in frame:
                     if not m['present'][r, slot] or not m['slot_frame'][r, slot]:
                         continue
@@ -116,6 +131,8 @@ class _Info:
         self.cal = None
         if lay.mode == 'AAA':
             self.cal = sf.aaa_calibration(m['blk'], m['mfi'], m['ircal'])
+        # Mode AA 可見光：反算地面處理器的非線性換算 (計數值 -> 原始計數值；係數為恆等時 None)
+        self.vis_lut = sf.vis_inverse(m) if lay.mode == 'AA' else None
 
     @property
     def time(self):
@@ -218,7 +235,8 @@ class GoesStretchedReader(GeoReader):
             except (OSError, ValueError):
                 pass
         return {'mode': f.mode, 'records': f.meta, 'offsets': f.offsets, 'ir_pos': f.ir_pos, 'vis_pos': f.vis_pos,
-                'index_file': f.index_file, 'meta': meta, 'oa': info.oa, 'nav': info.params, 'calibration': info.cal}
+                'ir_valid': f.ir_valid, 'vis_valid': f.vis_valid, 'index_file': f.index_file, 'meta': meta, 'oa': info.oa,
+                'nav': info.params, 'calibration': info.cal, 'vis_inverse': info.vis_lut}
 
     # ---- 導航 --------------------------------------------------------------
     def nav(self, scene, channel):
@@ -264,7 +282,12 @@ class GoesStretchedReader(GeoReader):
         for i in range(0, len(rows), 256):                       # 分批解碼 (大範圍時控制記憶體)
             part = rows[i:i + 256]
             v = f.vis_lines(info.vis_rec[part], info.vis_sec[part], cc0, cc1)
-            out[part - r0, cc0 - c0:cc1 - c0] = (v / 63.) ** 2
+            if info.vis_lut is not None:
+                v = info.vis_lut[v]
+            vals = (v / 63.) ** 2
+            nv = f.vis_valid[info.vis_rec[part], info.vis_sec[part]]
+            vals[np.arange(cc0, cc1)[None, :] >= nv[:, None]] = np.nan     # 截短區塊的補零部分
+            out[part - r0, cc0 - c0:cc1 - c0] = vals
         return out
 
     def _ir_image(self, path, channel):
@@ -280,6 +303,7 @@ class GoesStretchedReader(GeoReader):
             counts = f.ir_video(recs, 0)
             temp = sf.mode_a_temperature(counts)
             temp[:, f.layout.ir_valid:] = np.nan
+            temp[np.arange(sf.NIR)[None, :] >= f.ir_valid[recs, 0][:, None]] = np.nan     # 截短區塊的補零部分
             temp[~counts.any(axis=1)] = np.nan                      # 整行為 0
             for (r, _, t, _), row in zip(info.bands[0][::-1], temp[::-1]):
                 img[t - info.ir_first] = row                        # 同一步有多圈時取第一圈
@@ -294,6 +318,7 @@ class GoesStretchedReader(GeoReader):
                 recs = np.array([it[0] for it in items])
                 video = f.ir_video(recs, slot).astype(np.float64)
                 rad = self._radiance(f, info, recs, slot, band, video)
+                rad[np.arange(sf.NIR)[None, :] >= f.ir_valid[recs, slot][:, None]] = np.nan     # 截短區塊的補零部分
                 for (r, _, t, n), row in zip(items, rad):
                     if not np.isfinite(row).any():
                         continue

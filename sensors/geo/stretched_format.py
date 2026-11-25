@@ -41,8 +41,11 @@ IR 線位置 (掃描步，一步 = 8 條 VIS 線)：
   AA    小偵測器 (HgCdTe 小) 上 = s、下 = s+1；大偵測器 (HgCdTe 大、InSb) 各涵蓋 2 步，上 = s、s+1，下 = s+4、s+5。
         (以影像相關性量得，與 AAA 的 adjusted earth count 一致；各格式、各波段的位置與 CLASS 的 SSEC AREA_IR 逐像素相同。)
   AAA   IR 文件第 9~10 字的 adjusted earth count (已依上下偵測器位移修正) + 整檔的 (預測掃描數 - earth count) 中位數；
-        大偵測器涵蓋 2 步；adjusted earth count 為 0 (VISSR 模式的 .AAA) 時改用 AA 的規則。
+        大偵測器涵蓋 2 步；adjusted earth count 為 0 時改用 AA 的規則。
+截短的區塊：NCEI 2024 年以後的處理 (.meta 的 processing_stages 有 zero-padded) 把截短的區塊補零到完整長度，
+  並在 .meta 的 truncated_line_bits 記下 {.indx 行號 (由 1 起算): 有效位元數}；補零的部分 (ir_valid、vis_valid 之後) 為 NaN。
 """
+import json
 import mmap
 import os
 
@@ -175,6 +178,7 @@ class RawFile:
     """一個 Mode A / AA / AAA 檔：各記錄的區塊位置與文件欄位 (meta)。
       offsets  各記錄的起點 (byte)
       ir_pos   (記錄數, IR 區塊數) 各 IR 區塊的起點；vis_pos (記錄數, 8) 各 VIS 段的起點；-1 = 這筆記錄沒有該區塊
+      ir_valid、vis_valid  同形狀，各區塊的有效樣本數 (NCEI 補零的截短區塊之後為補零，見 _valid_samples)
     同名的 .indx (NCEI 附的區塊索引：每列 檔名、位置 (32 位元字)、位元偏移、區塊類型 [掃描數]) 存在時以它為準，
     可讀到不完整的記錄 (缺段的短記錄、檔尾截斷的記錄)；每個區塊仍以段碼驗證，不符的區塊不用。
     沒有 .indx 或索引與資料不符時，改以 VIS 段碼自行定位 (只用完整的記錄)。
@@ -195,8 +199,37 @@ class RawFile:
             n = len(blocks[0])
             keep = np.unique(np.r_[np.arange(min(probe[0], n)), np.arange(max(0, n - probe[1]), n)])
             blocks = tuple(b[keep] for b in blocks)
-        self.offsets, self.ir_pos, self.vis_pos = blocks
+        self.offsets, self.ir_pos, self.vis_pos, ir_line, vis_line = blocks
+        self.ir_valid, self.vis_valid = self._valid_samples(ir_line, vis_line)
         self.meta = parse(self.data, self.ir_pos, mode)
+
+    def _valid_samples(self, ir_line, vis_line):
+        """各 IR 區塊、VIS 段的有效樣本數 (ir_valid (記錄數, IR 區塊數)、vis_valid (記錄數, 8))：
+        .meta 的 truncated_line_bits {.indx 行號: 有效位元數} 記錄的補零區塊只有前面的樣本是資料，其餘為完整長度。
+        AA / AAA 的 IR1 截在共同文件 (掃描數、時間、校正) 之前時，這筆記錄的 IR 都不用。"""
+        L = self.layout
+        ir_n = np.full(ir_line.shape, NIR, np.int64)
+        vis_n = np.full(vis_line.shape, NVIS, np.int64)
+        try:
+            with open(os.path.splitext(self.path)[0] + '.meta', encoding='utf-8') as f:
+                trunc = {int(k): int(v) for k, v in json.load(f).get('truncated_line_bits', {}).items()}
+        except (OSError, ValueError, AttributeError, TypeError):
+            trunc = {}
+        if not trunc:
+            return ir_n, vis_n
+        lines = np.array(sorted(trunc), np.int64)
+        bits = np.array([trunc[k] for k in lines], np.int64)
+        for line, n, full, valid in ((ir_line, ir_n, NIR, lambda b: b // L.ir_bits - L.ir_doc_words),
+                                     (vis_line, vis_n, NVIS, lambda b: (b - VIS_DOC * 8) // 6)):
+            i = np.minimum(np.searchsorted(lines, line), len(lines) - 1)
+            hit = (line > 0) & (lines[i] == line)
+            n[hit] = np.clip(valid(bits[i][hit]), 0, full)
+        if L.mode != 'A':
+            # IR1 截在共同文件 (第 COMMON_DOC 字起、parse 用到的前 384 字) 結束之前：文件欄位不可靠
+            i = np.minimum(np.searchsorted(lines, ir_line[:, 0]), len(lines) - 1)
+            cut = (ir_line[:, 0] > 0) & (lines[i] == ir_line[:, 0]) & (bits[i] < (COMMON_DOC + 384) * L.ir_bits)
+            ir_n[cut] = 0
+        return ir_n, vis_n
 
     # ---- 區塊位置 ------------------------------------------------------------------------------
     def _read_indx(self):
@@ -205,10 +238,11 @@ class RawFile:
             return None
         L = self.layout
         starts, irs, viss = [], [], []
+        irl, visl = [], []              # 各區塊在 .indx 的行號 (由 1 起算；.meta 的 truncated_line_bits 用)
         last = None                     # 目前記錄中最後一個區塊的類型；None = 不在記錄中
         try:
             with open(path) as f:
-                for line in f:
+                for lno, line in enumerate(f, 1):
                     s = line.split()
                     if len(s) < 4:
                         continue
@@ -217,6 +251,8 @@ class RawFile:
                         starts.append(pos)
                         irs.append([pos] + [-1] * (len(L.ir_types) - 1))
                         viss.append([-1] * 8)
+                        irl.append([lno] + [0] * (len(L.ir_types) - 1))
+                        visl.append([0] * 8)
                         last = t
                     elif last is None or t <= last:
                         # 一筆記錄內區塊類型遞增；回頭 = 沒有 IR1 開頭的損壞記錄 (例如 AAA-MSI 掃描 1120)，略過到下一個 IR1
@@ -224,8 +260,10 @@ class RawFile:
                     else:
                         if t in L.ir_types:
                             irs[-1][L.ir_types.index(t)] = pos
+                            irl[-1][L.ir_types.index(t)] = lno
                         elif L.vis_type0 <= t < L.vis_type0 + 8:
                             viss[-1][t - L.vis_type0] = pos
+                            visl[-1][t - L.vis_type0] = lno
                         last = t
         except (OSError, ValueError):
             return None
@@ -255,7 +293,9 @@ class RawFile:
         ir[ir_bad] = -1
         keep = ir[:, 0] >= 0
         self.index_file = path
-        return start[keep], ir[keep], vis[keep]
+        irl = np.array(irl, np.int64).reshape(len(starts), -1)
+        visl = np.array(visl, np.int64).reshape(len(starts), 8)
+        return start[keep], ir[keep], vis[keep], irl[keep], visl[keep]
 
     def _sync_index(self, probe=None):
         L = self.layout
@@ -265,7 +305,7 @@ class RawFile:
             start = self._index()
         ir = start[:, None] + np.array(L.ir_slots, np.int64)[None, :] // 8
         vis = start[:, None] + L.vis0 + VIS_SECTOR * np.arange(8)[None, :]
-        return start, ir, vis
+        return start, ir, vis, np.zeros(ir.shape, np.int64), np.zeros(vis.shape, np.int64)     # 沒有 .indx 行號
 
     def _sector_ok(self, p, k):
         q = p + self.layout.vis0 + k * VIS_SECTOR
@@ -395,6 +435,7 @@ def parse(data, ir_pos, mode):
                                      (f1[:, 33] >> 4) * 100 + (f1[:, 33] & 15) * 10 + (f1[:, 28] >> 4))
     m['blk'], m['mfi'], m['oa'] = _oa_words(f1)
     m['submode'] = f2[:, 22]
+    m['vasmode'] = f2[:, 23]            # 第二欄第 24 字 Mode：bit 9 (& 2) 1 = VAS、0 = VISSR 模式；bit 10 (& 1) 1 = MSI、0 = DS
     hdr_word, frame_word = (4, 2) if mode == 'AA' else (6, 3)
     m['frame'] = (irdoc[0][:, frame_word] == ONE) & (m['submode'] != 4)
     m['slot_frame'] = np.stack([d[:, frame_word] == ONE for d in irdoc], 1)
@@ -403,7 +444,8 @@ def parse(data, ir_pos, mode):
     hdr = np.stack([d[:, hdr_word] & 0xFF for d in irdoc], 1)
     m['band'] = np.vectorize(lambda c: FILTER_BAND.get(int(c), 0))(hdr & 15) if n else np.zeros((0, nslot), np.int64)
     m['det'] = (hdr >> 6) & 3
-    # VAS 的 VISSR 模式 (預測標頭 = $80，偵測器類型 10 未定義) 沒有樣本、波段無法由濾鏡碼判斷，先不使用
+    # 預測標頭 = $80 (文件所寫 VISSR 模式的標頭，偵測器類型 10 未定義) 時波段無法由濾鏡碼判斷，不使用。
+    # (實際的 VISSR 模式樣本 GOES-6 1987/183 .AAA 的標頭是一般的 band 8 小偵測器 $38，見 GOES-STRETCHED 的 _Info)
     m['present'] = np.isin(m['sector'], (UPPER, LOWER)) & (m['band'] > 0) & (m['det'] != 2)
     if mode == 'AA':
         # 共同文件第 3 段 (校正)：第 60~63 字 Y_Z + Q (IR1、IR2)、第 64~65 字 DELTA SCALE FACTOR
@@ -418,7 +460,7 @@ def parse(data, ir_pos, mode):
         ok = (m['earth'] > 0) & (m['scan'] > 0)
         k = int(np.median((m['scan'] - m['earth'])[ok])) if ok.any() else 0
         aa_rule = m['scan'][:, None] + np.where(m['sector'] == LOWER, np.where(m['det'] == SMALL, 1, 4), 0)
-        # adjusted earth count 為 0 (VISSR 模式的 .AAA 檔不填) 時改用 AA 的上下偵測器規則
+        # adjusted earth count 為 0 (未填) 時改用 AA 的上下偵測器規則
         m['step'] = np.where(adj > 0, adj + k, aa_rule)
         m['ircal'] = f3[:, 62:112]                                   # 第 3 欄第 63~112 字：IR 校正參數 (20 圈輪替)
     m['nsteps'] = np.where(m['det'] == SMALL, 1, 2)
@@ -461,7 +503,7 @@ def oa_fields(blocks):
 def nav_params(oa, yyddd, seconds, scan):
     """O&A -> McIDAS 'GOES' 導航參數 (mcidas_goes_nav.params() 的 dict)。yyddd、seconds、scan：參考記錄的日期、時間、掃描數。
     軌道用 VIRGS 的 Kepler 元素 (EPY、EPH、SMA、ECC、INC、MA、AP、RAN，同 McIDAS AREA 導航區塊)；
-    自旋軸 = SPRA、SPDC 依 13 小時區間線性內插的反向 (赤經 + 180°、赤緯取負)；
+    自旋軸 = SPRA、SPDC 依 13 小時區間線性內插的反向 (赤經 + 180°、赤緯取負；沒有第二組時直接用 SPRA1、SPDC1)；
     姿態 pitch = -ZETA (line bias)、yaw = ETA (skew)、gamma = RHO (element bias，換成 VIS 像素數)。
     (同日 AREA 導航區塊的 pitch / yaw 與 ZETA / ETA 數值相同；GAMMA = sun pulse 角 = AREA 的 ISEANG。)
     沒有 Kepler 元素或自旋資料時 ValueError。"""
@@ -475,15 +517,19 @@ def nav_params(oa, yyddd, seconds, scan):
     s21 = 2. ** 21
     yyddd, scan = int(yyddd), int(scan)
     hours = seconds / 3600.
-    # 參考時刻相對 TIME1 (DATE1) 的歸一化時間 u (13 小時區間 -1~1)
-    days = _daynum(yyddd) - _daynum(int(oa['DATE1']))
-    u = 2. * ((hours + 24. * days) - oa['TIME1'] / 360000.) / 13. - 1.
     spra1, spdc1 = oa['SPRA1'] / s21, oa['SPDC1'] / s21
-    spra2, spdc2 = oa.get('SPRA2', oa['SPRA1']) / s21, oa.get('SPDC2', oa['SPDC1']) / s21
-    if abs(spra2 - spra1) > 180.:
-        spra2 += 360. if spra2 < spra1 else -360.
-    spra = .5 * (spra2 + spra1 + (spra2 - spra1) * u)
-    spdc = .5 * (spdc2 + spdc1 + (spdc2 - spdc1) * u)
+    if oa['DATE1'] > 0 and (oa.get('SPRA2') or oa.get('SPDC2')):
+        # 參考時刻相對 TIME1 (DATE1) 的歸一化時間 u (13 小時區間 -1~1)
+        days = _daynum(yyddd) - _daynum(int(oa['DATE1']))
+        u = 2. * ((hours + 24. * days) - oa['TIME1'] / 360000.) / 13. - 1.
+        spra2, spdc2 = oa['SPRA2'] / s21, oa['SPDC2'] / s21
+        if abs(spra2 - spra1) > 180.:
+            spra2 += 360. if spra2 < spra1 else -360.
+        spra = .5 * (spra2 + spra1 + (spra2 - spra1) * u)
+        spdc = .5 * (spdc2 + spdc1 + (spdc2 - spdc1) * u)
+    else:
+        # 只有一組自旋軸 (GOES-1 1979/130 等 NCEI 移植的 SYSNAV 導航：區塊 1、9、10 全為 0)：不內插
+        spra, spdc = spra1, spdc1
     a = np.zeros(128, dtype=np.int64)
     eph = int(oa['EPH'])
     a[1], a[3], a[4] = yyddd, 1, int(oa['EPY'])
@@ -507,6 +553,28 @@ def _daynum(yyddd):
     y, d = yyddd // 1000 % 100, yyddd % 1000
     year = 1900 + y if y >= 50 else 2000 + y
     return (year - 1970) * 365 + (year - 1969) // 4 + d
+
+
+# ---- Mode AA 可見光 --------------------------------------------------------------------------------
+def vis_inverse(m):
+    """Mode AA 的可見光是地面處理器 (VIP) 以可見光非線性係數換算後的值 Y = 63 Σ c_j (d/63)^j (j = 0~3)；
+    係數在共同文件第 3 段第 77~110 字 (校正參數，20 圈輪替) 的資訊 byte 585~648 (8 個偵測器 x 4 個 16 位元有號數，
+    c_j = 值 / 2^15)。回傳反算表 (64,)：Y -> 原始計數值 d (0~63，同 Mode A)；係數為恆等、不完整或不合理時 None。
+    用 8 個偵測器係數的平均：偵測器與可見光線的對應無法由資料確認 (GOES-5 1982 與同時次 Mode A 比對，
+    8 種排法的差異都在 0.15 個計數值內)。"""
+    sets = assemble(m['blk'], m['mfi'], m['common'][:, 256 + 76:256 + 110], nwords=34)
+    need = [(9, 2), (10, 1), (10, 2)]           # 資訊 byte 579~680 (第 18~20 圈)
+    if not all(k in sets for k in need):
+        return None
+    info = np.concatenate([np.array(sets[k], np.int64) for k in need])
+    b = info[584 - 578:648 - 578].reshape(8, 4, 2)
+    w = (b[..., 0] << 8) | b[..., 1]
+    c = (np.where(w >= 32768, w - 65536, w) / 32768.).mean(0)
+    d = np.linspace(0., 63., 6301)
+    y = 63. * sum(c[j] * (d / 63.) ** j for j in range(4))
+    if np.abs(y - d).max() < .1 or not np.all(np.diff(y) > 0) or y[-1] < 8.:
+        return None
+    return np.interp(np.arange(64.), y, d)
 
 
 # ---- Mode AAA IR 校正 ---------------------------------------------------------------------------
