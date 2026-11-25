@@ -4,8 +4,10 @@
 > (`Satima.toml` + `Satima-PO.toml`), the interface language, the image modes (native / dpi) and the continuity rules for polar orbiters, see [README.en.md](../../README.en.md).
 > PO is the family that changed most of the three: the differences from the original Satima-PO are listed under "Differences from the original three programs" in the README.
 
-Single channels (reflectance, brightness temperature with colormaps, DNB) and true color from VIIRS, MODIS, AVHRR, METimage, OLCI, SLSTR and SGLI.
+Single channels (reflectance, brightness temperature with colormaps, DNB) and true color from VIIRS, MODIS, AVHRR, METimage, OLCI, SLSTR, SGLI and FY-1C/1D MVISR.
 The 8 scripts, originally independent of each other, were first integrated into Satima-PO and then merged into Satima; the calibration and algorithms of each format remain in its own script.
+FY-1C/1D MVISR (`MVISR-L1B`) was rewritten from `SatimaV3-FY1D-NSMC.py` and NOAA AVHRR in NSMC format (`AVHRR-NSMC`) from `SatimaV3-NOAA-NSMC_accnumpy.py`,
+both added in 2026/11 (see "FY-1C/1D MVISR" and "NOAA AVHRR/3 (NSMC format)").
 
 ## Usage
 
@@ -92,11 +94,14 @@ Every sample of the swath carries its own latitude / longitude. The two image mo
 | OLCI-SAFE | Sentinel-3 OLCI | `S3*_OL_1_*.SEN3` (zip / tar / folder) | Oa01–Oa21, true color (RGB / CORR / WV) |
 | SLSTR-SAFE | Sentinel-3 SLSTR | `S3*_SL_1_RBT*.SEN3` (zip / tar / folder) | S1–S6 reflectance, S7–S9 brightness temperature |
 | SGLI-HDF5 | GCOM-C SGLI | `GC1SG1_*_1BSG_*.h5` | VN01–VN11, SW01–SW04 reflectance, TI01–TI02 brightness temperature, true color (RGB / CORR / WV) |
+| MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10: CH3–CH5 brightness temperature, the others reflectance; true color (RGB / CORR / WV) |
+| AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B switched by scan line) |
 
 VN07 / VN10 of SGLI are high-gain (ocean color) channels that saturate over cloud at a reflectance of about 0.16 / 0.13, and VN08 saturates at about 0.49; to plot clouds use VN11 (868.5 nm).
 
 Start and end times of each format: for VIIRS, METimage, AVHRR-NAT, OLCI and SLSTR they are taken from the file name; MODIS file names only have the start time, so the nominal 5 minutes is assumed;
-AVHRR-NC and SGLI file names have no end time, so the listing shows only the start time (files within 10 minutes of each other are still joined into one segment). The two AVHRR formats read only one file at a time.
+AVHRR-NC and SGLI file names have no end time, so the listing shows only the start time (files within 10 minutes of each other are still joined into one segment). AVHRR-NAT and AVHRR-NC read only one file at a time.
+For MVISR and AVHRR-NSMC the start and end times are taken from the header of the file (to the millisecond).
 
 ### VIIRS files
 
@@ -118,6 +123,80 @@ AVHRR-NC and SGLI file names have no end time, so the listing shows only the sta
   **No real files to test yet**: original packaged and aggregated files downloaded from CLASS, `GMODO` / `GIMGO`, M-band brightness temperatures (M12\~M16), removal of duplicate files and marking of missing files
   (the latter items were only run with the synthetic files of `tests/fake_viirs.py` to confirm that the workflow runs through).
 
+### FY-1C/1D MVISR
+
+* Files: NSMC HRPT 1B, fixed-length records of 28400 bytes (big-endian); the format is in NSMC's "FY-1 (02) batch polar-orbiting meteorological satellite data format" §3.1.
+  The file name says AVHRR, but the instrument is the 10-channel MVISR. One file is one received pass (about 9\~20 minutes); when several files contiguous in time are selected they are merged according to `[swath] merge`.
+* Once the range is known, the scan lines that intersect the map are first picked out with the tie points (3 degrees added outside the range), and only those lines are decoded and interpolated.
+* **Calibration**: every scan line carries calibration coefficients for the 10 channels. The format document says "(2,10), (1,10) holds the slopes and (2,10) the intercepts"; these are Fortran
+  subscripts, and the actual storage order is slope1, intercept1, slope2, intercept2… The original script took the first 10 values as slopes and the last 10 as intercepts, so every pair was wrong; this was the main reason
+  there was "no good calibration method". Correctly paired, the meaning is the same as NOAA pre-KLM 1b:
+  - Visible / near infrared (CH1, CH2, CH6\~CH10): albedo (%) = slope / 2^30 × count + intercept / 2^22; reflectance = albedo / 100, not divided by cos(solar zenith angle) (same as AVHRR-NAT).
+    The zero point falls on the space count (12\~29).
+  - Infrared (CH3\~CH5): radiance (mW/(m² sr cm⁻¹)) = slope / 2^30 × count + intercept / 2^22; the slope is negative and is updated for every scan line from the onboard blackbody.
+    Brightness temperature T\* = c2·ν / ln(1 + c1·ν³ / L), T = (T\* − A) / B; the central wavenumber ν and the band correction A, B are taken from FILTER_FUNCTIONS of the RTTOV coefficient files
+    (filter functions provided by NSMC; `rtcoef_fy1_4_mvisr.dat`, `rtcoef_fy1_3_mvisr.dat`):
+
+    | Channel | FY-1D ν (cm⁻¹) | A | B | FY-1C ν (cm⁻¹) | A | B |
+    |---|---|---|---|---|---|---|
+    | CH3 | 2699.586 | 3.3894 | 0.995275 | 2691.460 | 3.6385 | 0.994675 |
+    | CH4 | 925.553 | 0.7552 | 0.997388 | 912.074 | 0.8458 | 0.996996 |
+    | CH5 | 850.420 | 0.7725 | 0.997133 | 829.868 | 0.7262 | 0.997266 |
+
+  - Check (5 FY-1D files, 2003\~2006): brightness temperatures about 190\~302 K; the split-window difference CH4 − CH5 has a median of 1.5\~2.3 K over warm ocean (CH4 > 290 K)
+    and about 1 K over cold cloud tops (CH4 < 215 K), both in the normal range. With 1/wavelength as the central wavenumber (12.0 µm = 833 cm⁻¹) the cold-cloud difference is about 3.5 K, which is not plausible.
+  - Limitations: no nonlinearity correction (neither the format document nor the files have coefficients for it). The visible coefficients are identical in all files from 2003\~2006 (presumably pre-launch),
+    so sensor degradation is not reflected and absolute reflectances are only indicative (images are not affected).
+* **Geolocation**: the 51 tie points are at pixels 25, 65, …, 2025 (1-based, as in NOAA LAC 1b), verified with scan angles derived from the satellite zenith angles
+  (first point about −54.0°, spacing 2.16° = 40 pixels × 0.0541°). The original script spread the 51 points evenly over the whole scan line, putting the swath edges about 24 pixels off.
+  Along the scan, interpolation is linear in Earth-centered Cartesian coordinates with the Earth central angle as the coordinate, extrapolating 24 pixels at both ends; leave-one-out estimates are about 0.4 km inside and about 1\~4 km at the edges
+  (the tie points themselves are quantized to 1/128°, about 0.9 km). In a night infrared image with the Kanto region of Japan at the eastern swath edge, the coastline matches the land–sea temperature boundary.
+* Latitude / longitude are signed integers; the original script read them as unsigned, so scan lines in the southern and western hemispheres were skipped.
+* A few pixels at the edges of some channels are zeros or constant values filled in during co-registration (pixels 1\~2 of CH5/9/10, 1\~4 of CH7, the last 2 of CH3/CH8); they are set invalid.
+* The last 4-byte word of each scan line holds CH9, CH10, 0 in that order (actual data; the format document says 0, CH9, CH10). The scan line count in the data header does not match the actual number of records, so it is computed from the file size.
+* **True color** (0 in the channel menu): R = CH1 (0.58–0.68 µm), G = CH9 (0.53–0.58), B = CH7 (0.43–0.48); modes as in SGLI: 1.RGB, 2.CORR, 3.WV.
+  - Sensor degradation: the visible coefficients are identical in all files from 2003\~2006, and have been updated in the 2011 files (CH1 slope 0.0893 → 0.1292). The TOA reflectance of thick ice cloud should be nearly neutral in the visible
+    (estimated with the CREFL forward model: with 200\~400 hPa of Rayleigh above the cloud top, CH7/CH1 stays within 1.00 ± 1%), but the measured CH7/CH1 decreases year by year:
+
+    | Date | 2003/09 | 2004/10 | 2005/07 | 2005/09\~10 (3 passes) | 2006/04 | 2006/10 | 2011/05 (new coefficients) |
+    |---|---|---|---|---|---|---|---|
+    | CH9/CH1 | 1.00 | 0.99 | 0.97 | 0.95 | 0.92 | 0.94 | 0.93 |
+    | CH7/CH1 | 0.95 | 0.94 | 0.84 | 0.82\~0.83 | 0.77 | 0.72 | 0.85 |
+
+    A direct composite turns yellow, more so in later years. True color therefore first applies **inter-channel gains**: the median TOA ratio of thick ice cloud over the whole pass (CH4 < −30°C, CH1/cos(θs) > 0.5, θs < 75°,
+    satellite zenith < 50°) brings CH9 and CH7 in line with CH1; three passes from the same period agree within 2%. With fewer than 100 thick ice cloud samples (near the terminator),
+    the measurements with the same calibration set are interpolated by date. The gains and their basis are printed at run time. Single-channel output is not affected; the absolute degradation of CH1 itself cannot be determined this way.
+  - Rayleigh / ozone: there are no spectral response functions for the visible channels, so the band limits of the format document (boxcar) are averaged with solar-spectrum weighting:
+    τR = 0.0577 / 0.0945 / 0.2133, aO3 = 0.0912 / 0.0911 / 0.0054 (CH1 / CH9 / CH7). Recomputing the CREFL coefficients of MODIS B1/B3/B4 and VIIRS M3/M4/M5/I1 the same way gives τR within 4% and ozone mostly within 6%.
+    Ozone 0.319 cm-atm, sea level, no water vapor correction.
+  - Geometry: solar zenith, satellite zenith and relative azimuth of the 51 tie points in the file, interpolated with the Earth central angle as for geolocation. Compared with astronomical calculation by pyorbital, the solar zenith differs by < 0.02°;
+    relative azimuth = solar azimuth − satellite azimuth (0° = backscatter, the CREFL convention).
+  - Known limitations: thick clouds are slightly cream after correction (B/R about 0.9; CREFL corrects high clouds for the full atmosphere, MODIS does the same); sun glint turns khaki at large solar zenith angles
+    (CREFL assumes a Lambertian surface); clear ocean in 2003\~2006 is short of blue and looks olive (very sensitive to the CH7 calibration and τR;
+    with τR = 0.18 the ocean looks normal in these three scenes, but with the new 2011 coefficients the current τR already gives a blue ocean, so this is not handled by adjusting τR).
+* **Verification status** (2026/11): 13 FY-1D files (2003\~2011), all 10 channels readable; CH4 colormap, CH2 and true color (2003/09 Typhoon Dujuan, 2005/09 Typhoon Longwang, 2011/05 Yellow Sea) images visually normal.
+  No FY-1C samples (coefficients included, not tested).
+
+### NOAA AVHRR/3 (NSMC format)
+
+* Files: NSMC's NOAA-15\~19 HRPT 1B (`NA16_AVHRR_HRPT_L1_ORB_MLT_NUL_…L1B`), 22016 bytes per record; the format is in NSMC's
+  "NOAA series polar-orbiting meteorological satellite data format" §3.2. It is close to the 16-bit NOAA KLM 1b format but differs in a few places: the scaling of the visible coefficients (slope ×10¹⁰, intercept ×10⁷),
+  the order of the infrared coefficients (quadratic, linear, constant) and the satellite codes (NOAA-16/17/18 = 3/11/13); the radiance conversion constants in the header are wrong (a NOAA-18 file holds NOAA-16 / 17 values) and are not used.
+* Calibration: visible channels are dual-gain albedo (the intersection field is 0 before 2008 and is computed from the two lines; slope 2 of NOAA-17 CH3A overflows int32 and is derived from continuity),
+  reflectance = albedo / 100. The linear infrared radiance already includes the space radiance Ns (checked with a space count of about 990), and CH4 / CH5 get the NOAA KLM nonlinearity correction;
+  brightness temperature T = (T\* − A) / B with ν, A, B from the NOAA KLM User's Guide (identical to the RTTOV NOAA-18 coefficients).
+* Channel 3A / 3B: the channel 3 flag in the scan line bit field has opposite meanings before 2008 and from 2010 on, and is inconsistent within a file too, so the sign of the linear term of the 3B calibration coefficients is used instead
+  (negative = 3B; in 3A mode that field holds the 3A albedo coefficients), verified with the count distributions.
+* Quality of the calibration coefficients: the infrared coefficients of single scan lines jump (about 1\~4 K); lines that differ from the 51-line running median by more than a threshold use the median.
+  The infrared coefficients of NOAA-17 2010/10/28 are invalid for the whole file (period of AVHRR failure).
+* Damaged data, not marked by the quality flags: misaligned lines (more than 10% of pixels with implausible CH4 − CH5, or discontinuous with the adjacent lines) are masked entirely,
+  and runs of at most 2 such lines are interpolated from the lines above and below; single bit errors only mask the CH4 / CH5 pixels with an implausible split-window difference (so they are not taken as the maximum eye temperature);
+  single-line streaks in the visible channels are replaced by the mean of the lines above and below. NOAA-16 2005/09/28 (whole pass) and 2005/07/16 north of 32°N are misaligned garbage and are masked (no data inside the range).
+* Geolocation: the 51 tie points are at pixels 25\~2025 (NSMC format document), interpolated with the Earth central angle (as in MVISR-L1B). In CH2 images, the coastlines of Taiwan (scan angle about 34°) and Hainan (near the swath edge)
+  match.
+* **Verification status** (2026/11): 23 NOAA-16 / 17 / 18 files (2004\~2016) readable; CH4 − CH5 over warm ocean about 0.8\~3.5 K. Meranti (2016/09/13) CH4,
+  Utor (2013/08/11) CH1 and NOAA-17 CH3A images are visually normal. No NOAA-15 or NOAA-19 samples.
+
 ## True color correction check
 
 | | Solar zenith angle correction | Rayleigh (CREFL) | O3 | H2O | Terrain height | Sharpening | Enhancement |
@@ -127,6 +206,7 @@ AVHRR-NC and SGLI file names have no end time, so the listing shows only the sta
 | METimage | ✔ | ✔ (ISRF-weighted τ) | climatology | ✔ | — sea level | — | CIRA / WorldView |
 | OLCI | ✔ | ✔ (including sea-level pressure) | ECMWF | — | ✔ altitude | unsharp mask | CIRA (white-point normalization) / WorldView |
 | SGLI | ✔ | ✔ (τR from the JAXA ATBD) | climatology 300 DU (JAXA Koz) | — | — sea level | — (all 250 m) | CIRA / WorldView |
+| MVISR | ✔ | ✔ (τR estimated from the band limits) | climatology 0.319 cm-atm | — | — sea level | — | CIRA / WorldView; plus inter-channel gains from thick ice cloud |
 
 SGLI true color uses JAXA's L1B RGB combination R = VN08, G = VN05, B = VN03. VN08 / VN05 saturate over bright cloud (at about 0.49 / 0.67); saturated pixels are filled in from
 VN11 (868.5 nm, low gain) to keep clouds from turning cyan; this fill is Satima's own processing, not an official JAXA method.
@@ -145,6 +225,14 @@ terrain corrections, sharpening methods and enhancement fine-tuning remain in th
 - SGLI: missing values (Error_DN) were treated as the maximum value (about 14% outside the scan range was drawn as bright gray); SW01–SW04 wrongly used the thermal infrared brightness temperature conversion table; the 1 km channels (SW01/02/04) were geolocated incorrectly; latitude / longitude now use spline interpolation in Cartesian coordinates (error about 1/14 of the original, about 10 times faster)
 - Center time (the 7 scripts other than MODIS): it used to be estimated linearly from the start and end times of the file according to the middle row of the cropped range; now the actual observation time of the pixel closest to the center point is taken (what MODIS did originally), and the time scales of the formats (TAI / GPS / UTC) are all converted to UTC (`satima/po/obstime.py`). Measured errors of the old method: 24 s when the cropped range is cut off by the file boundary (VIIRS); 50 minutes when the beginning and end of a full-orbit NAT file overlap at high latitudes; 50 s at the edge of the SLSTR conical scan
 - Shared: the colormap menu item `10.NHC` should be `10.AVN`; the range check for file selection used the length of the file name `len(h5f)`; the cropped range was one row and one column short; it crashed when there was no data inside the range; `eval(input())` was replaced by the safe `ast.literal_eval`
+- MVISR (`SatimaV3-FY1D-NSMC.py`, when it was added in 2026/11): slopes and intercepts of the calibration coefficients were paired wrongly; for visible channels the albedo was treated as a radiance and divided by an assumed solar irradiance;
+  brightness temperatures used 1/wavelength as the central wavenumber without band correction; the pixel positions of the tie points were wrong (edges about 24 pixels off); latitude / longitude were read as unsigned integers (scan lines in the southern and western hemispheres were skipped);
+  the end-time field of the data header had the wrong type; the number of records to read was taken from the scan line count in the data header (which does not match the actual count); the whole data array was printed every time
+- AVHRR-NSMC (`SatimaV3-NOAA-NSMC_accnumpy.py`, when it was added in 2026/11): the band correction of brightness temperature was written as T = A + B·T\* (NOAA KLM uses (T\* − A) / B; NOAA-18 CH4
+  is about 0.3 K too warm at 200 K and CH3B about 1.6 K too warm at 300 K); for visible channels the albedo was multiplied by 100π / F and divided by 100, scaling reflectance up by about 2.4 (saturating above 41% albedo);
+  the menu offered channel 3 but selecting it crashed; the tie points were spread evenly over pixels 0\~2047 (should be 25\~2025), using interp2d which scipy 1.14 removed; the QC dropped coefficients outside the 2nd / 98th percentiles
+  (only for CH1 and CH4, always changing 4% of the scan lines of every file); all scan lines used the date of the first one; it crashed when there was no data in the range.
+  The extra division by 1000 / 10 of the visible coefficients, the order of the infrared coefficients and the nonlinearity correction were correct (the NSMC format differs from NOAA KLM)
 
 ## Adding a satellite
 
