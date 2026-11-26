@@ -161,7 +161,7 @@ Current coverage: ATMS (MW) and all PO readers use these rules. The other MW rea
 * Mercator changed from a sphere to the WGS84 ellipsoid: the image height for the same range differs slightly (e.g. 6918 rows become 6896 rows), so images are not pixel-identical to earlier ones.
 * CYL and LCC projections added; the range can be input as four edges; messages are available in Chinese.
 * Relative paths are now relative to the folder containing `Satima.py` (formerly the current directory at run time), and images are saved to `plot/` by default (formerly next to the data).
-* The title (Picname), besides being put in the file name, is also drawn at the lower left corner of the image (as in GEO and MW); the annotation below the image now uses the `[annotation] text` template.
+* The title (Picname), besides being put in the file name, can also be drawn at the lower left corner of the image (`[title] draw`; the common default is true, the PO config file defaults to false, i.e. file name only); the annotation below the image now uses the `[annotation] text` template.
 * The listing changed from "one row per file" to "one row per continuous segment"; VIIRS is no longer one row per band: the channels or true color are chosen from a menu after the data is selected.
 * Config keys: `[output] facecolor` → `[image] background`, `[output] ask_title` / `title` → `[title] ask` / `default`,
   `[coastline] resolution` → `[map] resolution` (old keys give a message asking you to rewrite them).

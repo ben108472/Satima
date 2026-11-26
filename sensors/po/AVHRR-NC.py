@@ -162,7 +162,7 @@ class AvhrrNcReader(SatReader):
     def plot(self, canvas, variant):
         cm = self.file.plot(canvas, self.lats, self.lons, self.data, variant, self.band)
         channel = BAND_LABEL[self.band]
-        return dict(band='B%s' % channel, colorbar=cm, label='BAND%s' % channel)
+        return dict(band='BAND-%s' % channel, colorbar=cm, label='BAND-%s' % channel)
 
 
 READER = AvhrrNcReader

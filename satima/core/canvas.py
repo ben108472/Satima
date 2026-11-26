@@ -154,7 +154,7 @@ class Canvas:
         ax.set_aspect('auto')
         ax.set_xlim(x0, x1)
         ax.set_ylim(y0, y1)
-        if title:
+        if title and self.cfg.title.get('draw', True):          # [title] draw = false：標題只用於檔名
             t = self.cfg.title
             ascii_ = _is_ascii(title)
             self._annotate(fig, ax, title, (0.04, 0.04), 'left', t.fontsize,

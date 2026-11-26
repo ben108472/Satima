@@ -17,7 +17,8 @@ Pillow         # 10.1.0   GEO 的底圖
 # ---- 可省略 ----
 numba          # 0.60.0   有的話取樣、真實色、存檔快數倍
 pyspectral     # 0.14.3   GEO 真實色的 Rayleigh 校正
-pyorbital      #          GEO 真實色的太陽位置
+pyorbital      # 1.8.2    GEO 真實色的太陽位置；AVHRR-L0 的 SGP4 (沒有 sgp4 時)
+sgp4           # 2.23     AVHRR-L0 (HRPT 原始框) 以 TLE 推算衛星位置 (沒有時改用 pyorbital)
 pyhdf          #          MODIS (HDF4)
 ephem          # 4.2.1    VIIRS DNB 月光反射率
 tifffile       #          GEO 城市燈光 / Blue Marble 底圖 (GeoTIFF)

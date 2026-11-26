@@ -10,6 +10,7 @@
 個案的 stdin 就是互動時依序輸入的內容；整合版多出的提問用 new_stdin 另外指定。
 """
 import os
+import re
 import subprocess
 import sys
 import time
@@ -90,6 +91,11 @@ def run(target, names):
             print('    ' + '\n    '.join((p.stdout + p.stderr).strip().splitlines()[-8:]))
 
 
+def _band_name(f):
+    """檔名中的 PO 頻道名稱 .B04. / .B03A. 換成 .BAND-04. / .BAND-03A.。"""
+    return re.sub(r'\.B(\d\d[AB]?)\.', r'.BAND-\1.', f)
+
+
 def compare(a, b, names):
     import numpy as np
     from PIL import Image
@@ -99,13 +105,16 @@ def compare(a, b, names):
         da, db = os.path.join(OUT, a, name), os.path.join(OUT, b, name)
         fa = sorted(f for f in os.listdir(da) if f.lower().endswith('.png')) if os.path.isdir(da) else []
         fb = sorted(f for f in os.listdir(db) if f.lower().endswith('.png')) if os.path.isdir(db) else []
-        if not fa or fa != fb:
+        # 2026/11 起 PO 的頻道名稱由 B04 改為 BAND-04 (同 GEO)：比對時視為同名
+        na, nb = {_band_name(f): f for f in fa}, {_band_name(f): f for f in fb}
+        if not fa or sorted(na) != sorted(nb):
             print('%-16s 檔名不同：%s  vs  %s' % (name, fa, fb))
             bad += 1
             continue
-        for f in fa:
+        for key in sorted(na):
+            f = na[key]
             xa = np.asarray(Image.open(os.path.join(da, f)).convert('RGBA')).astype(np.int16)
-            xb = np.asarray(Image.open(os.path.join(db, f)).convert('RGBA')).astype(np.int16)
+            xb = np.asarray(Image.open(os.path.join(db, nb[key])).convert('RGBA')).astype(np.int16)
             if xa.shape != xb.shape:
                 print('%-16s %s 尺寸不同 %s vs %s' % (name, f, xa.shape[:2], xb.shape[:2]))
                 bad += 1

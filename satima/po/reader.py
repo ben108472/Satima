@@ -105,6 +105,11 @@ class SatReader:
         """可以互相接續的檔案的分組依據 (同衛星、同產品)。"""
         return (getattr(f, 'satellite', ''), str(self.listing(f)[1]))
 
+    def merge_key(self, segment):
+        """一次選到多段時，可以合併成一張的分組依據 (見 family._merge)；預設同衛星、同產品。
+        例如 AVHRR 的 LAC、HRPT、FRAC 解析度相同，可以合併 (同一次過境的不同來源由讀取器挑選較好的掃描線)。"""
+        return (segment.satellite, segment.product)
+
     def segments(self, files):
         """把檔案接成幾段連續的觀測 [Segment, ...]。
         短片段 (一檔不到 15 分鐘) 間隔在 10 分鐘內就接成一段，中間缺檔照樣接、另外標示缺幾個；

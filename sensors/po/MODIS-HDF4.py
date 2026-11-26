@@ -711,7 +711,7 @@ class ModisReader(SatReader):
         cm = f0.plot(canvas, self.lats, self.lons, data, variant, self.band)
         if self.band == 0:
             return dict(band='TrueColor', colorbar=cm, label='TRUE COLOR %s' % cm)
-        return dict(band='B%02d' % self.band, colorbar=cm, label='BAND%02d' % self.band)
+        return dict(band='BAND-%02d' % self.band, colorbar=cm, label='BAND-%02d' % self.band)
 
 
 READER = ModisReader

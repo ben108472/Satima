@@ -38,7 +38,8 @@ Image title: Haikui
 * **Center time**: the time on the image and in the file name is the actual observation time of the pixel closest to the center point. Center point = the center you input; when the four edges are input it is the midpoint of the range.
 * For infrared channels the highest brightness temperature near the center point is printed (`[eyetemp]`), so when plotting a typhoon put the center on the eye.
 * Colormaps, true color styles and DNB scalings can all be multi-selected; `0` = all.
-* The title (formerly Picname) is asked by default (`[title] ask = true` in `Satima-PO.toml`) and may be left empty; it is put in the file name and drawn at the lower left corner of the image.
+* The band name in the image annotation and file name follows GEO: `BAND-04`, `BAND-03A` (`B04`, `B03A` before 2026/11); the native channel names of VIIRS (`I05`), SGLI (`VN11`) and METimage are unchanged.
+* The title (formerly Picname) is asked by default (`[title] ask = true` in `Satima-PO.toml`) and may be left empty; it is put into `{title}` of the file name. PO defaults to `[title] draw = false`, so the title is only used in the file name and not drawn on the image; with `true` it is also drawn at the lower left corner (the common default, as in GEO and MW).
 
 ## Config file highlights
 
@@ -96,12 +97,14 @@ Every sample of the swath carries its own latitude / longitude. The two image mo
 | SGLI-HDF5 | GCOM-C SGLI | `GC1SG1_*_1BSG_*.h5` | VN01–VN11, SW01–SW04 reflectance, TI01–TI02 brightness temperature, true color (RGB / CORR / WV) |
 | MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10: CH3–CH5 brightness temperature, the others reflectance; true color (RGB / CORR / WV) |
 | AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B switched by scan line) |
+| AVHRR-L1B | TIROS-N~NOAA-19, MetOp AVHRR/1, /2, /3 | NOAA Level 1b (POD / KLM): CLASS `NSS.GHRR/LHRR/HRPT/FRAC.*`, Chiba University HRPT; **detected by content, not by file name** | CH1–CH5 (CH3A / CH3B switched by scan line on AVHRR/3; no CH5 on AVHRR/1) |
+| AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1, /2, /3 | HRPT raw frames (Level 0) recorded by a receiving station: `.raw`, `.raw.xz` etc., also inside a `.tar`; **detected by content**; navigation needs TLEs | as AVHRR-L1B |
 
 VN07 / VN10 of SGLI are high-gain (ocean color) channels that saturate over cloud at a reflectance of about 0.16 / 0.13, and VN08 saturates at about 0.49; to plot clouds use VN11 (868.5 nm).
 
 Start and end times of each format: for VIIRS, METimage, AVHRR-NAT, OLCI and SLSTR they are taken from the file name; MODIS file names only have the start time, so the nominal 5 minutes is assumed;
 AVHRR-NC and SGLI file names have no end time, so the listing shows only the start time (files within 10 minutes of each other are still joined into one segment). AVHRR-NAT and AVHRR-NC read only one file at a time.
-For MVISR and AVHRR-NSMC the start and end times are taken from the header of the file (to the millisecond).
+For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the header of the file (to the millisecond). For AVHRR-L0 they come from the time codes and the number of frames.
 
 ### VIIRS files
 
@@ -196,6 +199,134 @@ For MVISR and AVHRR-NSMC the start and end times are taken from the header of th
   match.
 * **Verification status** (2026/11): 23 NOAA-16 / 17 / 18 files (2004\~2016) readable; CH4 − CH5 over warm ocean about 0.8\~3.5 K. Meranti (2016/09/13) CH4,
   Utor (2013/08/11) CH1 and NOAA-17 CH3A images are visually normal. No NOAA-15 or NOAA-19 samples.
+
+### NOAA AVHRR Level 1b (CLASS, Chiba University)
+
+* Files: the two NOAA Level 1b formats, documented in the POD Guide (TIROS-N\~NOAA-14) and the NOAA KLM User's Guide (NOAA-15 onwards) from NCEI;
+  the PDFs are downloaded in `D:\github\HRPT\doc`.
+  - POD: GAC records are 3220 bytes (409 pixels, data from the 3rd record), LAC/HRPT 14800 bytes (2048 pixels).
+  - KLM: GAC 4608 and LAC/HRPT/FRAC 15872 bytes (10-bit).
+  - Every file in the folder is identified by its content (file size and record length, header fields, a 0 / 122-byte TBM / 512-byte prefix),
+    so renamed files are read too.
+  - The satellite comes from the dataset name inside the file (`NSS.HRPT.NN.…`), otherwise from the spacecraft ID in the header
+    (POD and KLM use different numbers).
+  - Chiba University files (processing block `B0000000`) are listed with the source Chiba. Chiba stores NOAA-18 in the POD format,
+    and its header ID 7 means NOAA-9 in POD.
+* Channels: AVHRR/3 as in AVHRR-NSMC. CH3A / CH3B follows the scan-line bit field; when a KLM satellite is stored in the POD format,
+  it follows the sign of the channel-3 calibration slope. AVHRR/2 (NOAA-7, 9, 11, 12, 13, 14) has CH1\~CH5;
+  AVHRR/1 (TIROS-N, NOAA-6, 8, 10) has CH1\~CH4.
+* Visible calibration: reflectance = albedo / 100, not divided by cos(solar zenith angle).
+  - KLM: the operational coefficients in the records (dual gain, updated by NOAA).
+  - POD: the single slope in the records (mostly pre-launch values; NOAA-14 monthly from 1996/11).
+  - KLM satellite stored in the POD format (or a KLM file without usable coefficients): the NOAA STAR in-orbit coefficients
+    (see the visible calibration of AVHRR-L0 below), otherwise the pre-launch dual-gain coefficients of Appendix D.
+* IR calibration: brightness temperature T = (T\* − A) / B.
+  - KLM: N = a0 + a1·C + a2·C². The coefficients in the records include the space radiance and the nonlinearity correction;
+    a2 is scaled by 10⁶ in format versions <= 2 and by 10⁷ for CH4 / CH5 in versions >= 3.
+  - POD: the 1b coefficients are only a two-point linear calibration (space and blackbody), and the space radiance depends on the satellite
+    and the period (0 or negative; NOAA-9 changed several times in 1986\~87). They are therefore recomputed with the KLM model:
+    the linear position from the space and blackbody counts in the telemetry, the blackbody radiance from the 1b coefficients,
+    and then Walton's nonlinearity correction. For NOAA-14 this is identical to the guide's quadratic; for the other satellites
+    it differs from the guide's Ns = 0 correction tables by about 0.1\~0.4 K.
+  - Station products or IR coefficients that are constant over the pass (Chiba NOAA-17), and KLM satellites stored in the POD format
+    (the Chiba NOAA-18 IR slopes are off by about 3.5 times): calibrated from the PRT, blackbody and space counts following KLM Guide 7.1.2.4.
+    Verified on CLASS NOAA-15/18/19: within ±0.05 K of the operational coefficients.
+    One scan line in five carries the PRT reference reading; the guide says 0, but in practice it is often 1\~5 (never 0 on POD
+    satellites), so a line whose three readings have a median < 20 is taken as the reference. Station data often have bit errors in
+    single readings, so each line uses the median of its three readings, and each of the four PRTs is cleaned of outliers and
+    smoothed before averaging (the blackbody temperature of the Chiba NOAA-17 / 18 files used to jump by several K; it is now smooth).
+* Navigation: 51 tie points (LAC/HRPT pixels 25\~2025, GAC pixels 5\~405) interpolated in earth-central angle.
+  Scan lines with invalid navigation, or navigation discontinuous with the neighbouring lines, are masked.
+* Time: damaged time codes are replaced by the expected time. They are common at the start of Chiba files; CLASS files have
+  occasional errors too, e.g. a day number of 19. Lines around data gaps are not flagged; scan-line numbers are unreliable at gaps
+  and are not used.
+* Merging sources: LAC, HRPT and FRAC of the same satellite have the same resolution and are merged into one image when
+  selected together in the list (e.g. `[10,11]`); GAC forms its own group. Different sources of the same pass
+  (CLASS LAC and station HRPT, CLASS and Chiba) are merged as follows:
+  - Scan lines are aligned by time, then checked with the channel-4 counts: the same data should be almost bit-identical,
+    and a time offset of a whole number of scan lines is corrected from the counts.
+  - Each scan line uses the source with the lowest fraction of missing and spike pixels. The source that is best overall
+    in the overlap is preferred; another source is used only when it is clearly better.
+  - Missing or spike pixels in the chosen line are filled with good values from the other sources at the same position.
+  - Example: the LAC (20:28–20:34) and HRPT (20:31–20:45) of Mitch (1998/10/26 NOAA-14) overlap by 903 lines with 99.94%
+    identical counts; the merged image covers 1\~58N and the stripes at the start of the HRPT are replaced by the LAC.
+    Synthetic tests: a 1-second time offset is aligned automatically, and 287 of 300 spikes in the primary source
+    are filled from the other source.
+* **Verification** (2026/11): all 30 sample files are read (NOAA-9\~19, GAC / LAC / HRPT, CLASS and Chiba).
+  - Over warm ocean CH4 − CH5 is 1.3\~3.4 K, over cold cloud 0\~1.9 K.
+  - Navigation and eye positions: the eyes of Haiyan (2013/11/07 GAC), Mitch (1998/10/26 NOAA-14) and Utor (2013/08/11 Chiba NOAA-18)
+    match the best tracks, and the coastlines line up.
+  - Bit-error speckle in station data (implausible split-window difference in about 10% of the pixels of the Chiba NOAA-17 file and
+    about 2% of the NOAA-18 file; < 0.1% in CLASS files) and the stripes at the start and end of a pass are drawn as they are for now.
+  - No samples: TIROS-N, NOAA-6/7/8/13, MetOp (NOAA 1b), FRAC.
+
+### NOAA AVHRR HRPT raw frames (Level 0)
+
+* Files: HRPT minor frames recorded directly by a receiving station, one frame per scan line (11090 10-bit words, each stored in 16 bits;
+  little- or big-endian, detected automatically).
+  - Uncompressed or `.xz` / `.gz` / `.bz2`; an uncompressed `.tar` can also be used as is (every file in it is listed, no need to unpack).
+    Subfolders up to two levels below the data folder are searched too. A file present both in a `.tar` and in a folder is listed once.
+  - Detected by the frame sync, not by the file name. The satellite comes from the spacecraft address in the ID word (AAPP's table,
+    TIROS-N\~NOAA-19; addresses used by more than one satellite are resolved by year); `noaa18`, `n14` and the like in the path take precedence.
+  - Raw frames carry no year: it is taken from a date in the path (`2003-02-04/`, `20130811.063140.noaa18.raw.xz`), otherwise from the
+    modification time of the file (or tar member).
+  - Samples: the three tars in `D:\github\L0` (2003/02/04 NOAA-14\~17, 2013/08/11 and 2013/11/07 NOAA-15/16/18/19; 42 passes).
+* TLEs: raw frames carry no orbit data, so the satellite position is computed from TLEs (SGP4; needs the `sgp4` or `pyorbital` package).
+  - TLEs are read from `[tle] dir` in `Satima-PO.toml` (default `tle/`, including subfolders and .zip) and from the `.tle` / `.txt` files in
+    the data folder; the set with the epoch closest to the observation is used, with a warning beyond `[tle] max_age` days (default 5).
+    There is also a warning when the three nearest sets disagree by more than 20 km (historical archives occasionally contain
+    contradictory elements, e.g. two interleaved families 160 km apart for NOAA-9 in 1988 at CelesTrak).
+  - `tle/` holds the CelesTrak historical archives (TIROS-N\~NOAA-17, 1980\~2004). From 2005 on, run `python tools/fetch_spacetrack_tle.py`
+    to download from Space-Track (free account; put the account and password in `.spacetrack` in your home folder, or in the environment
+    variables `SPACETRACK_IDENTITY` / `SPACETRACK_PASSWORD`). The files go to `tle/spacetrack/` (kept out of version control per the
+    Space-Track terms of use). NOAA-12/14/15/16/17/18/19 take about 85 queries, 5 minutes, 11 MB.
+* Navigation: the same geometry as AAPP (geodetic nadir, scan plane perpendicular to the inertial velocity, 25 µs per sample, intersection
+  with the WGS84 ellipsoid), computed at the 51 tie points and interpolated as in AVHRR-L1B, plus a roll, yaw and scan step per satellite
+  (`avhrr_hrpt.NAV_PARAMS`).
+  - The parameters are fitted to coastlines: the IR image (land colder than sea on winter nights, the opposite on summer days) is matched
+    with Satima's 30-arc-second land/sea mask in 128×128 blocks, and the roll, yaw and step of each satellite are solved by least squares
+    (with one time offset per pass to absorb clock and TLE errors). Data: 14 ascending and descending passes near Japan on 2003/02/04 and
+    2013/11/07; the RMS residual drops from 0.9\~3.3 km to 0.3\~0.5 km.
+  - Results (sign convention of this program: roll > 0 towards pixel 2048): NOAA-18 roll −0.18°, NOAA-19 yaw +0.33°, NOAA-15 yaw +0.18°,
+    NOAA-16 yaw −0.13° with a step of 0.05396° (AAPP: 0.053955°), the others 0.05406\~0.05409° (AAPP derives 0.0540865° from the sampling
+    rate); all satellites share a roll of about −0.03°. Without them the scan edges are off by 5\~10 km. They are of the same size as the
+    constant attitude corrections in NOAA 1b headers (NOAA-18 roll 0.15°, NOAA-19 yaw 0.25°) and AAPP's default biases. NOAA-14 has only two
+    damaged descending passes (roll −0.076°, yaw −0.056°); satellites without a fit use AAPP's step and a roll of −0.03°.
+  - Nadir: the KLM Guide and AAPP both use the ellipsoid normal (geodetic nadir). Against the coastlines the north-south error is about −1 km
+    with the geodetic nadir and −3.5 km with the geocentric one (it changes sign between ascending and descending passes, so it is separable
+    from clock errors). NOAA's operational navigation from 2013 on also matches the geodetic nadir, while the 1998 CLASS 1b is closer to
+    the geocentric one.
+  - Independent check (2013/08/11 passes, not used in the fit): most blocks improve from 1\~5 km to within 1 km.
+  - No clock correction: the raw time codes lack NOAA's clock correction, leaving a constant along-track offset. Against the CLASS GAC of
+    2013/11/07, NOAA-18 runs 0.225 s fast, about 1.5 km along track (the 2013/08/11 coastlines show about −1.8 km); NOAA-19 0.05 s,
+    NOAA-15 0.003 s.
+* Time: damaged time codes are repaired as in AVHRR-L1B. These frames are treated as missing: fewer than 4 matching sync words, flagged as
+  test signal in the KLM ID word, or a repeat of the previous frame (same time code and minor frame number; as in AAPP).
+  Reception gaps (e.g. about 90 frames missing between 00:59:59 and 01:00:14 in the 2003/02/04 NOAA-17 pass) show up as a band without data.
+* Calibration:
+  - IR always from the PRT blackbody temperature and the blackbody and space counts (as above). PRT coefficients: KLM Appendix D from
+    NOAA-15 on; pygac values for older satellites (the same as AAPP's avhcal.txt), verified on CLASS 1b (NOAA-9/10/11/14): the blackbody
+    temperature agrees with that of the 1b coefficients at the blackbody counts to within ±0.012 K (median). The NOAA-14 band corrections
+    (ν, A, B) of pygac and AAPP differ, but the brightness temperatures agree to within 0.01 K.
+  - End to end: the 2013/11/07 raw frames averaged to GAC pixels (GAC pixel n = LAC samples 5n\~5n+3; counts differ by 0.25) compared with
+    the operational calibration of the CLASS GAC: CH4 median difference −0.020 K for NOAA-18, −0.033 K for NOAA-19, −0.022 K for NOAA-15
+    (5th\~95th percentile about ±0.15 K).
+  - Visible: NOAA-16\~19 use the NOAA STAR in-orbit coefficients (F. Wu's vicarious calibration over the Libyan desert, one set per month;
+    the files shipped with AAPP, in `conversion_table/AVHRR/`), taking the set whose Center date is closest to the observation. Coverage:
+    NOAA-16 2003/05\~2014, NOAA-17 2004/02\~2010, NOAA-18 2005/10\~2017, NOAA-19 2009\~2017. More than 120 days before the first set,
+    the coefficients are interpolated between the launch date (pre-launch values) and the first set; more than 400 days from any set, the
+    pre-launch values are used. The difference is large: in 2013 the NOAA-18 CH2 is 24.5% above pre-launch and NOAA-16 CH2 32%.
+    NOAA-15 and older satellites have no STAR coefficients and use pre-launch values (dual gain from Appendix D from NOAA-15 on,
+    POD Guide Table 3.3.2-1 for older satellites), so their reflectances are low.
+  - 3A / 3B: as in AAPP, from the channel-3 space counts (at least 5 of 10 samples < 100 for 3A, > 900 for 3B) when they agree with bit 0
+    of the ID word (1 = 3A); lines that disagree or are undecided are interpolated from their neighbours, then an 11-line median is taken.
+* Comparison with AAPP 8.15 (source in `D:\github\L0\AAPP_8.15.tgz`): the geodetic nadir, scan step, address table, repeated frames,
+  3A/3B and STAR coefficients above come from AAPP. AAPP does not handle the displaced and repeated segments caused by AVHRR scan-motor
+  jitter (next item), and it times every scan line from the first one with the nominal 1/6 s.
+* **Damage in the data itself** (2026/11 samples): in the 2003/02/04 passes about 22% of the NOAA-14 pixels and 2\~4% of NOAA-15/16 are
+  displaced or repeated segments (identical runs of values appear in neighbouring frames at drifting positions, giving stair-like stripes);
+  NOAA-17 and the 2013 files < 0.5% (NOAA-15 in 2013 about 3%). The pattern fits the MIRP re-sending old scan lines when the AVHRR scan
+  motor jitters, not a decoding problem; it is drawn as is for now and can raise the reported eye temperature.
 
 ## True color correction check
 

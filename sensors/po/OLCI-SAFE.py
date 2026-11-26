@@ -329,7 +329,7 @@ class OlciReader(SatReader):
         cm = self.files[0].plot(canvas, self.lats, self.lons, self.data, version)
         if self.channel == 0:
             return dict(band='TrueColor', colorbar=cm, label='TRUE COLOR %s' % TC_DESC[version])
-        return dict(band='B%02d' % self.channel, colorbar=cm, label='BAND%02d' % self.channel)
+        return dict(band='BAND-%02d' % self.channel, colorbar=cm, label='BAND-%02d' % self.channel)
 
 
 READER = OlciReader

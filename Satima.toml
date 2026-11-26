@@ -40,7 +40,7 @@ conversion_table_dir = "conversion_table"
 backend = "basemap"
 # 海岸線/國界解析度：basemap 為 c / l / i / h / f (GSHHS)，cartopy 為 110m / 50m / 10m (Natural Earth)
 # 兩種寫法皆可，自動對應：c,l -> 110m；i -> 50m；h,f -> 10m (小範圍建議 h / 10m；全球範圍用 l，否則讀海岸線很慢)
-resolution = "i"
+resolution = "f"
 # 投影：merc (麥卡托) / cyl (等距圓柱) / lcc (蘭伯特正形圓錐)；GEO 另有 fd (全圓盤，衛星視角；見 Satima-GEO.toml)
 # 麥卡托與 LCC 的地球模型一律為 WGS84 橢球，三類衛星同一範圍、同一大小的圖逐像素對齊。
 # 執行時會詢問投影，直接 Enter = 這裡的設定；ask_projection = false 則一律使用這裡的設定、不再詢問
@@ -118,6 +118,7 @@ workers = "auto"
 # 是否詢問圖片左下角的標題；false 則一律使用 default。標題也會填入檔名的 {title}。
 ask = false
 default = ""
+draw = true              # 標題畫在圖片左下角；false = 不畫在圖上，只填入檔名的 {title} (各類別的設定檔可覆寫)
 fontsize = 12
 family = "Arial"
 weight = "normal"

@@ -25,6 +25,10 @@ DEFAULTS = {
                                              # (幾分鐘以內的短片段一律自動接成一筆，不受這裡影響)
         'merge_gap': 600.0,                  # 兩個檔的間隔在幾秒內視為同一段
     },
+    'tle': {
+        'dir': 'tle',                        # AVHRR-L0 (HRPT 原始框) 定位用的 TLE 目錄；相對路徑以 Satima.py 所在目錄為準
+        'max_age': 5.0,                      # TLE epoch 與觀測時間相差超過幾天時警告
+    },
     'eyetemp': {
         'enable': True,                      # 紅外線頻道：印出中心點附近的最高亮溫
         'radius_deg': 0.5,
@@ -72,6 +76,12 @@ def validate(cfg):
     if not (_is_num(sw.merge_gap) and sw.merge_gap >= 0):
         fail('[swath] merge_gap 須為 0 以上的秒數 (目前為 %r)', '[swath] merge_gap must be seconds >= 0 (got %r)',
              sw.merge_gap)
+    t = cfg.tle
+    if not isinstance(t.dir, str):
+        fail('[tle] dir 須為字串 (目前為 %r)', '[tle] dir must be a string (got %r)', t.dir)
+    if not (_is_num(t.max_age) and t.max_age > 0):
+        fail('[tle] max_age 須為正數 (天；目前為 %r)', '[tle] max_age must be a positive number of days (got %r)',
+             t.max_age)
     e = cfg.eyetemp
     if not (_is_num(e.radius_deg) and e.radius_deg > 0):
         fail('[eyetemp] radius_deg 須為正數 (目前為 %r)', '[eyetemp] radius_deg must be a positive number (got %r)',

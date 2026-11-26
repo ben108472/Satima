@@ -535,7 +535,7 @@ class AvhrrNsmcReader(SatReader):
         else:
             cm = canvas.bt_mesh(self.lons, self.lats, self.data, variant)
         channel = BAND_LABEL[self.band]
-        return dict(band='B%s' % channel, colorbar=cm, label='BAND%s' % channel)
+        return dict(band='BAND-%s' % channel, colorbar=cm, label='BAND-%s' % channel)
 
 
 READER = AvhrrNsmcReader

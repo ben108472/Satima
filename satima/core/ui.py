@@ -235,11 +235,14 @@ def ask_width(max_size, native_min, scale=1, max_scale=8, floor=200, native_zh='
 
 
 def ask_title(cfg_title):
-    """圖片左下角的標題；設定 [title] ask = false 時使用 default。"""
+    """圖片左下角的標題 (也填入檔名的 {title})；設定 [title] ask = false 時使用 default。
+    [title] draw = false 時標題不畫在圖上，只用於檔名。"""
     default = str(cfg_title.get('default', '') or '')
     if not cfg_title.get('ask', False):
         return default
     hint = ' [%s]' % default if default else ''
+    if not cfg_title.get('draw', True):
+        return _read(tr('檔名標題 (不畫在圖上)%s：', 'Title for the file name (not drawn on the image)%s: ') % hint) or default
     return _read(tr('圖片標題%s：', 'Image title%s: ') % hint) or default
 
 

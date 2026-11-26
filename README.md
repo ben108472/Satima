@@ -161,7 +161,7 @@ SSMIS 整圈。程式把「相鄰」和「同一段」分成兩件事 (`satima/c
 * 麥卡托由圓球改為 WGS84 橢球：同一範圍的圖高會差一點 (例：6918 列變 6896 列)，與以前的圖不會逐像素相同。
 * 多了 CYL、LCC 投影；範圍可以輸入四邊；訊息有中文。
 * 相對路徑改以 `Satima.py` 所在的資料夾為準 (原本是執行時的目前目錄)，圖預設存到 `plot/` (原本存在資料旁邊)。
-* 標題 (Picname) 除了填入檔名，也會畫在圖片左下角 (同 GEO、MW)；圖下方的標註改用 `[annotation] text` 樣板。
+* 標題 (Picname) 除了填入檔名，也可以畫在圖片左下角 (`[title] draw`；共同預設 true，PO 的設定檔預設 false，只用於檔名)；圖下方的標註改用 `[annotation] text` 樣板。
 * 列表由「一個檔一列」改為「一段連續的觀測一列」；VIIRS 不再是一個波段一列，選了資料之後才從選單選頻道或真實色。
 * 設定檔的鍵：`[output] facecolor` → `[image] background`、`[output] ask_title` / `title` → `[title] ask` / `default`、
   `[coastline] resolution` → `[map] resolution` (舊的鍵會提示改寫)。

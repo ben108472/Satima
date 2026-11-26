@@ -26,15 +26,23 @@ linewidth = 0.5
 max_size = 50000         # 長邊的上限 (像素)
 
 [title]
-ask = true               # 原本的 Picname：執行時詢問，會畫在圖片左下角並填入檔名的 {title}
+ask = true               # 原本的 Picname：執行時詢問，填入檔名的 {title}
+draw = false             # 標題不畫在圖上，只用於檔名；true = 也畫在圖片左下角
 
 
 # ---- PO 才有的設定 ---------------------------------------------------------
 [swath]
 # 很短的片段 (VIIRS 約 85 秒、METimage 約 1 分鐘一檔) 一律自動接成一筆，資料列表的備註欄顯示檔數與缺檔數。
-# 整圈 / 半圈的長檔各自一列 (AVHRR 一次只讀一個檔，不合併)；一次選到時間相接的多列時合併成一張："ask" = 詢問、true = 直接合併、false = 各畫各的
+# 整圈 / 半圈的長檔各自一列 (AVHRR-NAT、AVHRR-NC 一次只讀一個檔，不合併)；一次選到時間相接的多列時合併成一張："ask" = 詢問、true = 直接合併、false = 各畫各的
 merge = "ask"
 merge_gap = 600.0        # 兩個檔的間隔在幾秒內視為同一段 (同一地點的兩次通過至少隔一圈，約 100 分鐘)
+
+[tle]
+# AVHRR-L0 (HRPT 原始框) 沒有軌道資料，以 TLE 推算衛星位置 (SGP4)：讀 dir 中的所有 TLE 檔 (含子資料夾、.zip)，
+# 以及資料目錄中的 .tle / .txt；取 epoch 最接近觀測時間的一組。
+# 1980~2004 年：CelesTrak 歷史檔 (tle/ 已附 TIROS-N~NOAA-17)；2005 年以後：Space-Track (gp_history) 或 CelesTrak 申請表
+dir = "tle"              # 相對路徑以 Satima.py 所在目錄為準
+max_age = 5.0            # TLE 與觀測相差超過幾天時警告 (推算誤差約每天 1 km 以上)
 
 [eyetemp]
 # 紅外線頻道：印出中心點半徑 radius_deg (度) 內的最高亮溫

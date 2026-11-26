@@ -118,6 +118,7 @@ workers = "auto"
 # Whether to ask for the title at the lower-left corner of the image; false = always use default. The title is also filled into {title} of the file name.
 ask = false
 default = ""
+draw = true              # draw the title at the lower-left corner of the image; false = not drawn, only filled into {title} of the file name (each family's config file can override it)
 fontsize = 12
 family = "Arial"
 weight = "normal"

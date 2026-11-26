@@ -536,7 +536,7 @@ class MvisrReader(SatReader):
             cm = ''
         else:
             cm = canvas.bt_mesh(self.lons, self.lats, self.data, variant)
-        return dict(band='B%02d' % self.band, colorbar=cm, label='BAND%02d' % self.band)
+        return dict(band='BAND-%02d' % self.band, colorbar=cm, label='BAND-%02d' % self.band)
 
 
 READER = MvisrReader

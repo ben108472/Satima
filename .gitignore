@@ -30,3 +30,7 @@ conversion_table/MTSAT/
 Thumbs.db
 desktop.ini
 .claude/
+
+# Space-Track 下載的 TLE (tools/fetch_spacetrack_tle.py；依 Space-Track 使用條款不公開散布)
+tle/spacetrack/
+

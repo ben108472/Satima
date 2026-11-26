@@ -75,6 +75,14 @@ calibration = "nominal"
 xrit_decompress = ""
 
 
+[gvar]
+# GOES-8~15 原始 GVAR (GOES-GVAR)：地面站失鎖時，一條線可能從某處起整段被填入 0~1023 的亂數
+#   (NOAA CLASS 的 .indx 標 ? 的區塊；不是影像，無法還原)。同一條線其他部分與 CRC 錯誤的區塊都照常讀出。
+#   false = 亂數照原值畫出 (可見光為亮點線、紅外為假的極冷 / 極熱像素)；
+#   true  = 標為無資料 (縮圖時由周圍像素補上；讀取約慢 5~15%)
+mask_fill = false
+
+
 [report]
 # 色表強化圖印出範圍內的最高 / 最低雲頂溫度
 max_tbb = true

@@ -75,6 +75,14 @@ calibration = "nominal"
 xrit_decompress = ""
 
 
+[gvar]
+# GOES-8~15 raw GVAR (GOES-GVAR): when the ground station loses lock, a line may be filled with random values 0~1023 from some point on
+#   (the blocks marked ? in NOAA CLASS .indx files; this is not image data and cannot be recovered). The rest of the line and blocks with CRC errors are still read as usual.
+#   false = draw the random values as they are (a dotted bright line in the visible, false very cold / very warm pixels in the infrared);
+#   true  = set them to no data (filled from the surrounding pixels when the image is reduced; reading is about 5~15% slower)
+mask_fill = false
+
+
 [report]
 # For colormap-enhanced images, print the highest / lowest cloud-top temperature within the area
 max_tbb = true

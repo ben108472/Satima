@@ -590,6 +590,12 @@ e.g. `VS2303`, `V10585`); visible and IR are both in the same file.
   NSMC files are read in fixed 26624-byte slots with the starting point detected automatically; fields of the Line Documentation such as channel and detector
   are corrected with the whole-file mode for "the n-th record within the block"; each record locates its line number from its own scan count RISCT, cross-checked against Block 0;
   the navigation parameters are the mode of the O&A parameters of all Block 0s.
+  About 0.2\~1.3% of the blocks in CLASS files have CRC errors (CRC-16/CCITT, initial value 0xFFFF, result inverted), but almost all of them have only a few pixels with bit errors, so they are read as usual.
+  The `<file name>.indx` that CLASS also provides (position, length and Block ID of each block, with damaged blocks marked `?`) is not needed: the positions found from the block headers are the same.
+* When the ground station loses lock, a line may be filled with random values 0\~1023 from some point on (the blocks marked `?` in `.indx`; this is not image data and cannot be recovered).
+  With `[gvar] mask_fill = true` they are set to no data (filled from the surrounding pixels when the image is reduced; reading is about 5\~15% slower); the default `false` draws them as they are.
+  Criterion: at least 24 of every 32 pixels lie more than 40 counts outside the range of the lines above and below, and the mean difference between adjacent pixels along the line is >= 100 counts
+  (real images and sporadic bit errors reach at most 23 with a mean difference < 50). The rest of the line is read as usual.
 * Navigation is the same as McIDAS nvxgvar (0.0000 km difference from the old version's le2ll); when IMC is off (e.g. GOES-9 at 155°E in 2003\~2005)
   it is computed with the scan time of each line (the old version and McIDAS use a single time, giving differences of up to about 18 km within one image).
   The center of each IR line is in the middle of its 4 visible lines (+1.5 lines; the old version and McIDAS do not add this, and a 10.7 µm coastline comparison confirms that +1.5 is correct).

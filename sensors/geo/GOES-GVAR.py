@@ -4,11 +4,20 @@
   資料由 GVAR 區塊組成，每個掃描 (可見光 8 條線) 為 Block 0 (文件，8 位元字) + Block 1~2 (紅外紀錄) +
   Block 3~10 (可見光 8 個偵測器，Block 3 最北)，10 位元字。每個區塊前有 30 bytes 的區塊頭，重複 3 次。
   Block 1~10 的每筆紀錄 = Line Documentation (16 字：頻道、偵測器、side、掃描序號 RISCT、像素數…) + 像素。
-  NSMC 檔每個區塊固定佔 26624 bytes (開頭 2 bytes 對齊)；CLASS 檔則依區塊頭的字數依序排列。
+  NSMC 檔每個區塊固定佔 26624 bytes (開頭 2 bytes 對齊)；CLASS 檔則依區塊頭的字數依序排列
+  (區塊頭 720 bits + 資料 (字數 - 2) x 字長 + CRC 16 bits，補到整數 bytes)。
+  CLASS 另外提供的 <檔名>.indx (每個區塊一行：檔名、32 位元字位移、位元位移、區塊位元數、Block ID，Block 0 另有
+  INSLN；資料損壞的區塊在最後標 ?) 不需要：依區塊頭找到的位置與 .indx 相同 (GOES-8 1998/10/26 四個檔逐塊比對)。
 容錯 (原始資料常有位元錯誤、區塊或參數缺失，但影像本身多半有效)：
   區塊頭以 3 份逐 byte 多數決；長度不合理時往後找下一個區塊頭 (CLASS) 或跳到下一個固定位置 (NSMC)。
   每筆紀錄依自己 Line Documentation 的掃描序號 RISCT 定出行號，並與 Block 0 的 INSLN、RISCT 交叉驗證；
   導航參數、影像起點等取所有 Block 0 的眾數，個別 Block 0 損壞不影響。
+  不以 CRC 捨棄區塊：CLASS 檔約 0.2~1.3% 的區塊 CRC 錯誤 (CRC-16/CCITT，初值 0xFFFF、結果取反)，但絕大多數
+  只有少數像素的位元錯誤，其餘像素正確，照常讀出。
+  地面站失鎖時填入的偽隨機資料 (一條線從某處起整段是 0~1023 的亂數，CLASS .indx 標 ? 的區塊即是) 不是影像；
+  [gvar] mask_fill = true 時標為無資料 (預設 false：照原值畫出)。判定：每 32 像素中至少 24 個落在上下兩列範圍
+  ±40 計數值之外，且沿線相鄰像素差平均 >= 100 計數值；真實影像 (含 CRC 錯誤區塊的零星位元錯誤) 最多 23 個、
+  平均差 < 50，不受影響 (GOES-8/12/13/15 共 11 個檔驗證)。
 波段 (BAND-01~06 = GVAR 頻道 1~6)：GOES-8~11 有 1~5、GOES-12~15 有 1、2、3、4、6；
   可見光 1 km、紅外 4 km (GOES-8~11 的 BAND-03 與 GOES-12/13 的 BAND-06 為 8 km)。
   紅外每條線涵蓋 4 (或 8) 條可見光線、每個像素 4 個可見光像素；行列號以可見光為單位換算後導航。
@@ -39,6 +48,9 @@ _B0 = 8040                          # Block 0 資料 (8 位元字) 的 bytes
 _REC = np.dtype([('block', 'u1'), ('offset', 'i8'), ('word', 'i4'), ('scan', 'i4'), ('SPCID', 'u2'), ('SPSID', 'u2'),
                  ('LSIDE', 'u2'), ('LIDET', 'u2'), ('LICHA', 'u2'), ('RISCT', 'u4'), ('LPIXLS', 'u4'), ('LWORDS', 'u4'),
                  ('LZCOR', 'u2'), ('LLAG', 'u2'), ('slot', 'u1')])
+# 填充資料 (地面站失鎖時的亂數) 的判定：_FILL_W 像素中至少 _FILL_OUT 個落在上下兩列範圍 ±_FILL_TOL 之外，
+# 且沿線相鄰像素差的平均 >= _FILL_JUMP (計數值)
+_FILL_W, _FILL_OUT, _FILL_TOL, _FILL_JUMP = 32, 24, 40, 100
 
 
 def _mode(values):
@@ -279,6 +291,47 @@ class GvarFile:
             words = unpack10(f.read(5 * (g1 - g0)))
         return words[w0 - 4 * g0:w1 - 4 * g0]
 
+    def fill_mask(self, rec_of_row, row, c0, words):
+        """第 row 列 (像素 c0 起的計數值 words) 中地面站填充資料的位置 (bool)；沒有時 None。
+        先看沿線跳動 (不必多讀)，夠大才讀上下兩列比較。"""
+        n, w = words.size, _FILL_W
+        if n < w:
+            return None
+        x = words.astype(np.int32)
+        cs = np.r_[0, np.cumsum(np.abs(np.diff(x)))]
+        jump = (cs[w - 1:] - cs[:n - w + 1]) >= _FILL_JUMP * (w - 1)      # 視窗 [k, k+w) 內 w-1 個相鄰差
+        if not jump.any():
+            return None
+        lo = np.full(n, np.iinfo(np.int32).max, np.int32)
+        hi = np.full(n, np.iinfo(np.int32).min, np.int32)
+        for j in (row - 1, row + 1):
+            if 0 <= j < len(rec_of_row) and rec_of_row[j] >= 0:
+                ref = self.read_words(int(rec_of_row[j]), c0, c0 + n).astype(np.int32)
+                lo[:ref.size] = np.minimum(lo[:ref.size], ref)
+                hi[:ref.size] = np.maximum(hi[:ref.size], ref)
+        known = lo <= hi
+        if not known.any():
+            return None
+        out = known & ((x < lo - _FILL_TOL) | (x > hi + _FILL_TOL))
+        co = np.r_[0, np.cumsum(out)]
+        bad = jump & (co[w:] - co[:n - w + 1] >= _FILL_OUT)
+        if not bad.any():
+            return None
+        mask = np.convolve(bad.astype(np.int32), np.ones(w, np.int32))[:n] > 0
+        # 填充段的開頭 / 結尾常是較稀疏的亂數：往兩側延伸到最後一個異常像素 (中間最多隔 3 個正常像素)
+        edges = np.flatnonzero(np.diff(np.r_[0, mask.view(np.int8), 0]))
+        for s, e in zip(edges[::2], edges[1::2]):
+            k, last = s - 1, s
+            while k >= 0 and last - k <= 4:
+                last = k if out[k] else last
+                k -= 1
+            k, end = e, e
+            while k < n and k - end < 4:
+                end = k + 1 if out[k] else end
+                k += 1
+            mask[last:end] = True
+        return mask
+
 
 def peek(path, slot):
     """只讀檔案開頭的幾個 Block 0 (資料列表用，不必建立整個檔案的索引) -> (Block 0, 後段) 的眾數紀錄。"""
@@ -328,6 +381,7 @@ class GoesGvarReader(GeoReader):
         super().__init__(cfg)
         self._files = {}
         self._layouts = {}
+        self._fill_seen = set()
 
     # ---- 檔案 --------------------------------------------------------------
     def scenes(self, folder='.'):
@@ -488,12 +542,20 @@ class GoesGvarReader(GeoReader):
         kind, cal = self._calibrators(scene, number)
         out = np.full((r1 - r0, c1 - c0), np.nan, dtype=np.float32)
         table_dir = self.cfg.general.conversion_table_dir
+        mask_fill = bool(self.cfg.get('gvar', {}).get('mask_fill', False))
+        pad = _FILL_W if mask_fill else 0           # 填充資料的判定多讀兩側各一個視窗，視窗邊緣也判得準
+        a0 = max(c0 - pad, 0)
         for i, rec in enumerate(rec_of_row[r0:r1]):
             if rec < 0:
                 continue
-            counts = g.read_words(int(rec), c0, c1).astype(np.int64)
+            wide = g.read_words(int(rec), a0, c1 + pad)
+            counts = wide[c0 - a0:c1 - a0].astype(np.int64)
             if counts.size == 0:
                 continue
+            fill = g.fill_mask(rec_of_row, r0 + i, a0, wide) if mask_fill else None
+            if fill is not None:
+                fill = fill[c0 - a0:c0 - a0 + counts.size]
+                self._report_fill(scene, number, r0 + i, int(fill.sum()))
             r = g.records[rec]
             if kind == 'vis':
                 bias, g1, g2, alb = cal
@@ -509,7 +571,19 @@ class GoesGvarReader(GeoReader):
                 lut = cal[key]
                 if lut is not None:
                     out[i, :counts.size] = lut[np.clip(counts, 0, 1023)]
+            if fill is not None:
+                out[i, :counts.size][fill] = np.nan
         return out
+
+    def _report_fill(self, scene, number, row, npix):
+        """填充資料每個 (檔案、頻道、列) 只報告一次。"""
+        key = (scene.files['path'], number, row)
+        if key in self._fill_seen or not npix:
+            return
+        self._fill_seen.add(key)
+        print(tr('  [GVAR] %s 頻道 %d 第 %d 列：%d 個像素是地面站填充的亂數，標為無資料',
+                 '  [GVAR] %s channel %d row %d: %d pixels are ground-station fill (random data), set to no data') % (
+            os.path.basename(scene.files['path']), number, row + 1, npix))
 
 
 READER = GoesGvarReader

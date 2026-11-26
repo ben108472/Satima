@@ -71,6 +71,7 @@ DEFAULTS = {
     'title': {
         'ask': False,                        # 是否詢問圖片左下角的標題
         'default': '',
+        'draw': True,                        # 標題畫在圖片左下角；false = 只填入檔名的 {title}
         'fontsize': 12, 'family': 'Arial', 'weight': 'normal',
         'family_nonascii': 'Source Han Sans CN', 'weight_nonascii': 'normal',
         'box_alpha': 0.5, 'box_pad': 4.0,
@@ -292,6 +293,9 @@ def validate(cfg, kind):
     if not (_is_num(lon0) or str(lon0).strip().lower() == 'auto'):
         fail('[map] lcc_central_longitude 須為 "auto" 或經度 (目前為 %r)',
              '[map] lcc_central_longitude must be "auto" or a longitude (got %r)', lon0)
+
+    if not isinstance(cfg.title.draw, bool):
+        fail('[title] draw 須為 true 或 false (目前為 %r)', '[title] draw must be true or false (got %r)', cfg.title.draw)
 
     mode = str(img.mode).strip().lower()
     if mode not in MODES:

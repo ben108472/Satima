@@ -29,6 +29,10 @@ DEFAULTS = {
         'calibration': 'nominal',            # nominal (檔頭係數) / gsics (紅外 GSICS 修正) / meirink (可見光 Meirink 2023)
         'xrit_decompress': '',               # 壓縮 HRIT (-C_) 的 EUMETSAT xRITDecompress 執行檔 (沒有 pyPublicDecompWT 時)
     },
+    # GOES-8~15 原始 GVAR (GOES-GVAR)
+    'gvar': {
+        'mask_fill': False,                  # 地面站失鎖時填入的亂數段標為無資料；false = 照原值畫出
+    },
     # GMS (VISSR) 的 JMA 導航
     'navigation': {
         'engine': 'numba',                   # 計算方式：numba / cython / numpy (結果相同)
@@ -133,6 +137,9 @@ def validate(cfg):
     if not isinstance(cfg.visible.fill_missing_lines, bool):
         fail('[visible] fill_missing_lines 須為 true 或 false (目前為 %r)',
              '[visible] fill_missing_lines must be true or false (got %r)', cfg.visible.fill_missing_lines)
+    if not isinstance(cfg.gvar.mask_fill, bool):
+        fail('[gvar] mask_fill 須為 true 或 false (目前為 %r)',
+             '[gvar] mask_fill must be true or false (got %r)', cfg.gvar.mask_fill)
 
     tc = cfg.truecolor
     if 'abi_green_fractions' in tc:

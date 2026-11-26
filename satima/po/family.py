@@ -76,10 +76,11 @@ def _merge(segs, reader, cfg):
         return segs
     gap = float(cfg.swath.merge_gap)
     chains = []
-    for s in sorted(segs, key=lambda s: (s.satellite, s.product, s.time)):
+    key = reader.merge_key
+    for s in sorted(segs, key=lambda s: (key(s), s.time)):
         last = chains[-1][-1] if chains else None
-        if (last is not None and (last.satellite, last.product) == (s.satellite, s.product)
-                and (s.time - last.end).total_seconds() <= gap):
+        if (last is not None and key(last) == key(s)
+                and (s.time - max(x.end for x in chains[-1])).total_seconds() <= gap):
             chains[-1].append(s)
         else:
             chains.append([s])
