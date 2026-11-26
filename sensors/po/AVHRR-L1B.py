@@ -7,6 +7,9 @@ AVHRR-L1B — TIROS-N ~ NOAA-19、MetOp AVHRR 的 NOAA Level 1b (NOAA CLASS 的 
   不依檔名辨識：資料夾中的每個檔依內容判斷 (POD / KLM、GAC / LAC、前置檔頭)，改過檔名也能讀。
   千葉大學的檔 (處理區塊編號 B0000000) 前面多 122 bytes (TBM，POD 格式) 或 512 bytes (KLM 格式)，
   而且 NOAA-18 存成 POD 格式 (表頭的衛星 ID 7 是 KLM 的編號；衛星以檔內的資料集名稱為準)。
+  也可以是 .gz / .bz2 / .xz 壓縮檔 (例如千葉的 n1297121720.l1b.bz2)：列表時只解壓開頭判斷，畫圖時整個解壓進記憶體
+  (不在磁碟留下解壓檔；.bz2 解壓 70 MB 約 2~3 秒)。.bz2 事先不知道解壓後的大小，掃描線數先用表頭的記錄數，
+  讀檔時以實際長度為準。同一個檔的壓縮與未壓縮版本都在時只列未壓縮的。
 
 頻道
   AVHRR/3 (NOAA-15 以後)：1.CH1 0.63  2.CH2 0.86  3.CH3A 1.61  4.CH3B 3.74  5.CH4 10.8  6.CH5 12.0
@@ -57,12 +60,16 @@ AVHRR-L1B — TIROS-N ~ NOAA-19、MetOp AVHRR 的 NOAA Level 1b (NOAA CLASS 的 
     (以整體最好的來源為主)，選中的掃描線裡無資料或尖峰的像元再以其他來源同一位置的好值補上。
   - 只有一個來源時不做任何挑選或修補。
 """
+import lzma
 import os
+import re
 import warnings
+import zlib
 
 import numpy as np
 from scipy.ndimage import median_filter
 
+import avhrr_hrpt as hrpt
 import avhrr_l1b_noaa as fmt
 from satima.core.colormaps import ask_colormaps
 from satima.core.i18n import tr
@@ -85,7 +92,12 @@ SPIKE_COUNTS = 50           # 計數與左右相鄰都相差超過此值 (同方
 ALIGN_RANGE = 30            # 依計數對齊時，掃描線位移的搜尋範圍
 SWITCH_MARGIN = 0.002       # 其他來源的分數 (無資料與尖峰的比例) 好過主要來源此值以上才換
 SKIP_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.txt', '.pdf', '.py', '.pyc', '.toml', '.nc', '.h5', '.he5', '.hdf',
-            '.zip', '.gz', '.7z', '.tar', '.tif', '.tiff', '.xml', '.json', '.md', '.csv', '.log', '.ini'}
+            '.zip', '.7z', '.tar', '.tif', '.tiff', '.xml', '.json', '.md', '.csv', '.log', '.ini'}
+# 壓縮檔 (hrpt.COMPRESSED：.gz / .bz2 / .xz / .lzma) 依內層的副檔名略過：SKIP_EXT，以及 HSD 的 .DAT.bz2 (數量多，不必逐一解壓)
+SKIP_INNER_EXT = SKIP_EXT | {'.dat'}
+COMPRESSED_HEAD = 2 ** 17   # 壓縮檔辨識時解壓的開頭長度 (含最長的前置檔頭、表頭與第一筆資料)
+# USGS EarthExplorer 的檔名 = Entity ID：AO + 衛星編號 + mmddyy + hhmmss (例：ao14101797050456_012257.l1b)
+USGS_ENTITY = re.compile(r'^ao\d{14}(?!\d)', re.I)
 
 # 頻道 (選單編號，同 AVHRR-NSMC)：1 CH1、2 CH2、3 CH3A、4 CH3B (AVHRR/1、2 的頻道 3)、5 CH4、6 CH5
 COUNT_INDEX = {1: 0, 2: 1, 3: 2, 4: 2, 5: 3, 6: 4}
@@ -104,6 +116,10 @@ SENSORS = {1: 'AVHRR', 2: 'AVHRR2', 3: 'AVHRR3'}
 _SNIFF = {}
 
 
+def is_compressed(path):
+    return os.path.splitext(path)[1].lower() in hrpt.COMPRESSED
+
+
 def sniff(path):
     """fmt.sniff 的快取 (資料夾掃描與建立檔案物件各做一次)。"""
     try:
@@ -112,8 +128,25 @@ def sniff(path):
         return None
     key = (os.path.abspath(path), st.st_size, st.st_mtime)
     if key not in _SNIFF:
-        _SNIFF[key] = fmt.sniff(path)
+        _SNIFF[key] = _sniff_compressed(path) if is_compressed(path) else fmt.sniff(path)
     return _SNIFF[key]
+
+
+def _sniff_compressed(path):
+    """壓縮檔：解壓開頭 COMPRESSED_HEAD bytes 判斷。解壓後的大小：整個檔都在開頭裡時即為其長度，
+    .gz / .xz 讀容器記錄的大小，.bz2 不知道 (fmt.UNKNOWN_SIZE)。"""
+    try:
+        with hrpt.open_stream(path) as f:
+            head = f.read(COMPRESSED_HEAD)
+    except (OSError, EOFError, lzma.LZMAError, zlib.error, ValueError):
+        return None
+    if len(head) < COMPRESSED_HEAD:
+        size = len(head)
+    else:
+        size = hrpt.raw_size(path)
+        if size is None:
+            size = fmt.UNKNOWN_SIZE
+    return fmt.sniff(path, head=head, size=size)
 
 
 # ===== 共用計算 =====
@@ -318,12 +351,16 @@ def dual_gain_albedo(counts, s1, i1, s2, i2, x):
 
 # ===== 單一檔案 =====
 class AvhrrL1bFile:
+    compressed = False          # 壓縮檔：資料整個解壓進記憶體 (_load)
+    _pending = False            # 壓縮檔解壓之前，nlines 只是表頭記錄的條數 (第一次用到 nlines 時解壓並以實際長度為準)
 
     def __init__(self, fullname):
         s = sniff(fullname)
         if s is None:
             raise ValueError(tr('不是 NOAA AVHRR 1b 檔', 'not a NOAA AVHRR 1b file'))
         self.fullname = fullname
+        self.compressed = self._pending = is_compressed(fullname)
+        self._buf = None
         self.s = s
         self.satellite = s.satellite
         self.generation = s.generation
@@ -331,6 +368,7 @@ class AvhrrL1bFile:
         self.end = s.end
         self.channel = s.dtype                  # 列表的產品欄：GAC / LAC / HRPT / FRAC
         self.station = s.station
+        self.source = self._source(fullname, s)  # 列表的資料來源欄
         self.nlines = s.nlines
         self.npix = fmt.NPIX[s.kind]
         self.dtype = (fmt.klm_record if s.layout == fmt.KLM else fmt.pod_record)(s.kind)
@@ -342,11 +380,57 @@ class AvhrrL1bFile:
     def __lt__(self, other):
         return self.time < other.time
 
+    @staticmethod
+    def _source(fullname, s):
+        """列表的資料來源 (只用於顯示)：接收站產品 (處理區塊 B0000000 等，樣本為千葉大學) 為 Chiba；
+        USGS EarthExplorer 的檔 (檔名為 Entity ID，或有 122 bytes TBM 且資料集名稱的站碼為 SF = Sioux Falls) 為 USGS；其他為 CLASS。"""
+        if s.station:
+            return 'Chiba'
+        name = getattr(s, 'name', None) or ''
+        if USGS_ENTITY.match(os.path.basename(fullname)) or (s.prefix == 122 and name.upper().endswith('.SF')):
+            return 'USGS'
+        return 'CLASS'
+
     @property
     def klm(self):
         return self.s.layout == fmt.KLM
 
+    @property
+    def nlines(self):
+        if self._pending:
+            self._load()
+        return self._nlines
+
+    @nlines.setter
+    def nlines(self, value):
+        self._nlines = value
+
+    def _load(self):
+        """壓縮檔：整個解壓進記憶體 (不在磁碟留下解壓檔)；掃描線數以解壓後的實際長度為準。"""
+        if self._buf is None:
+            buf = hrpt.read_bytes(self.fullname)
+            rec, first = self.s.record, self.s.first
+            n = (len(buf) - first) // rec
+            if n < 1:
+                raise ValueError(tr('%s：解壓後不到一條掃描線', '%s: less than one scanline after decompression')
+                                 % self.label)
+            if (len(buf) - self.s.prefix) % rec:
+                print(tr('%s：解壓後的長度不是記錄長度 (%d bytes) 的整數倍，略過最後不完整的記錄',
+                         '%s: the decompressed length is not a multiple of the record length (%d bytes); the incomplete '
+                         'last record is skipped') % (self.label, rec))
+            self._buf = buf
+            self._nlines = n
+            self._pending = False
+        return self._buf
+
+    def release(self):
+        """釋放解壓後的資料 (壓縮檔)；定位、遙測等已算好的結果留著，之後還要讀時再解壓。"""
+        self._buf = None
+
     def _records(self):
+        if self.compressed:
+            buf = self._load()
+            return np.frombuffer(buf, dtype=self.dtype, count=self._nlines, offset=self.s.first)
         return np.memmap(self.fullname, dtype=self.dtype, mode='r', offset=self.s.first, shape=(self.nlines,))
 
     def _field(self, name, r0=0, r1=None):
@@ -732,8 +816,9 @@ class AvhrrL1bFile:
 class AvhrrL1bReader(SatReader):
     NAME = 'AVHRR-L1B'
     SENSOR = 'AVHRR'
-    DESCRIPTION = 'TIROS-N~NOAA-19、MetOp AVHRR NOAA 1b (CLASS GAC/LAC/HRPT/FRAC、千葉大學 HRPT；依內容辨識)'
-    DESCRIPTION_EN = 'TIROS-N~NOAA-19, MetOp AVHRR NOAA 1b (CLASS GAC/LAC/HRPT/FRAC, Chiba Univ. HRPT; detected by content)'
+    DESCRIPTION = 'TIROS-N~NOAA-19、MetOp AVHRR NOAA 1b (CLASS GAC/LAC/HRPT/FRAC、千葉大學 HRPT，可為 .gz/.bz2/.xz；依內容辨識)'
+    DESCRIPTION_EN = ('TIROS-N~NOAA-19, MetOp AVHRR NOAA 1b (CLASS GAC/LAC/HRPT/FRAC, Chiba Univ. HRPT, also .gz/.bz2/.xz; '
+                      'detected by content)')
     SOURCE = 'CLASS'
     PATTERNS = ('*',)
 
@@ -747,11 +832,18 @@ class AvhrrL1bReader(SatReader):
         except OSError:
             return []
         for name in entries:
-            if os.path.splitext(name)[1].lower() in SKIP_EXT:
+            ext = os.path.splitext(name)[1].lower()
+            if ext in hrpt.COMPRESSED:
+                if hrpt._inner_ext(name) in SKIP_INNER_EXT or name.lower().endswith('.tar.' + ext[1:]):
+                    continue
+            elif ext in SKIP_EXT:
                 continue
             path = os.path.join(root, name)
             if os.path.isfile(path) and sniff(path) is not None:
                 names.append(name)
+        # 同一個檔的壓縮與未壓縮版本 (X 與 X.bz2) 都在時只列未壓縮的
+        have = set(names)
+        names = [n for n in names if not (is_compressed(n) and os.path.splitext(n)[0] in have)]
         return sorted(names, key=cls.sort_key)
 
     def make_file(self, name):
@@ -768,8 +860,9 @@ class AvhrrL1bReader(SatReader):
         return (segment.satellite, 'GAC' if segment.product == 'GAC' else 'LAC/HRPT/FRAC')
 
     def source_label(self, segment):
-        # 處理區塊編號 B0000000 或有前置檔頭 = 接收站自行產生 (樣本為千葉大學 CEReS)
-        return 'Chiba' if any(f.station for f in segment.files) else 'CLASS'
+        # 各檔的 source (見 AvhrrL1bFile._source)；一段有多個來源時依 Chiba、USGS、CLASS 的順序取第一個
+        sources = {getattr(f, 'source', 'CLASS') for f in segment.files}
+        return next(s for s in ('Chiba', 'USGS', 'CLASS') if s in sources or s == 'CLASS')
 
     def begin(self, segment):
         super().begin(segment)
@@ -793,6 +886,13 @@ class AvhrrL1bReader(SatReader):
         return [None]
 
     def prepare(self):
+        try:
+            return self._prepare()
+        finally:
+            for f in self.files:            # 壓縮檔解壓進記憶體的資料 (畫圖只用 self.data)
+                f.release()
+
+    def _prepare(self):
         parts = []
         for f in self.files:
             rows = f.rows_in(self.georange, self.center[1])

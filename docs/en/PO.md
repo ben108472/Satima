@@ -97,8 +97,8 @@ Every sample of the swath carries its own latitude / longitude. The two image mo
 | SGLI-HDF5 | GCOM-C SGLI | `GC1SG1_*_1BSG_*.h5` | VN01–VN11, SW01–SW04 reflectance, TI01–TI02 brightness temperature, true color (RGB / CORR / WV) |
 | MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10: CH3–CH5 brightness temperature, the others reflectance; true color (RGB / CORR / WV) |
 | AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B switched by scan line) |
-| AVHRR-L1B | TIROS-N~NOAA-19, MetOp AVHRR/1, /2, /3 | NOAA Level 1b (POD / KLM): CLASS `NSS.GHRR/LHRR/HRPT/FRAC.*`, Chiba University HRPT; **detected by content, not by file name** | CH1–CH5 (CH3A / CH3B switched by scan line on AVHRR/3; no CH5 on AVHRR/1) |
-| AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1, /2, /3 | HRPT raw frames (Level 0) recorded by a receiving station: `.raw`, `.raw.xz` etc., also inside a `.tar`; **detected by content**; navigation needs TLEs | as AVHRR-L1B |
+| AVHRR-L1B | TIROS-N~NOAA-19, MetOp AVHRR/1, /2, /3 | NOAA Level 1b (POD / KLM): CLASS `NSS.GHRR/LHRR/HRPT/FRAC.*`, Chiba University HRPT (including `.l1b.bz2`), also `.gz` / `.bz2` / `.xz`; **detected by content, not by file name** | CH1–CH5 (CH3A / CH3B switched by scan line on AVHRR/3; no CH5 on AVHRR/1) |
+| AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1, /2, /3 | HRPT raw frames (Level 0) recorded by a receiving station: `.raw`, `.raw.xz` etc., Chiba University `.l0.bz2` / `.gi.bz2`, also inside a `.tar`; **detected by content**; navigation needs TLEs | as AVHRR-L1B |
 
 VN07 / VN10 of SGLI are high-gain (ocean color) channels that saturate over cloud at a reflectance of about 0.16 / 0.13, and VN08 saturates at about 0.49; to plot clouds use VN11 (868.5 nm).
 
@@ -212,6 +212,11 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     (POD and KLM use different numbers).
   - Chiba University files (processing block `B0000000`) are listed with the source Chiba. Chiba stores NOAA-18 in the POD format,
     and its header ID 7 means NOAA-9 in POD.
+  - Compressed files `.gz` / `.bz2` / `.xz` (e.g. Chiba's `n1297121720.l1b.bz2`) need not be unpacked: the listing decompresses only the
+    start of the file, and plotting decompresses the whole file into memory (no decompressed file is left on disk; a 70 MB .bz2 takes
+    about 2\~3 s). The decompressed size of a .bz2 is not known in advance, so the number of scan lines is first taken from the header
+    and replaced by the actual length when the file is read. Files whose inner extension is on the skip list (e.g. HSD `.DAT.bz2`) are not
+    checked; when both the compressed and the uncompressed version of a file are present, only the uncompressed one is listed.
 * Channels: AVHRR/3 as in AVHRR-NSMC. CH3A / CH3B follows the scan-line bit field; when a KLM satellite is stored in the POD format,
   it follows the sign of the channel-3 calibration slope. AVHRR/2 (NOAA-7, 9, 11, 12, 13, 14) has CH1\~CH5;
   AVHRR/1 (TIROS-N, NOAA-6, 8, 10) has CH1\~CH4.
@@ -259,6 +264,16 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   - Bit-error speckle in station data (implausible split-window difference in about 10% of the pixels of the Chiba NOAA-17 file and
     about 2% of the NOAA-18 file; < 0.1% in CLASS files) and the stripes at the start and end of a pass are drawn as they are for now.
   - No samples: TIROS-N, NOAA-6/7/8/13, MetOp (NOAA 1b), FRAC.
+  - Chiba `.l1b.bz2` (two NOAA-12 passes on 1997/12/17, NOAA-19 on 2014/10/07): identical to the decompressed files (navigation, time,
+    calibration); the eye of Super Typhoon Paka (1997/12/17 21Z, 14.1N 140.7E) is clear. About 30% of the 2014 NOAA-19 scan lines are
+    empty and some sections are very noisy; the L0 of the same pass is bit-for-bit the same, so this is a reception problem.
+  - USGS EarthExplorer AVHRR Orbital Segments (M2M dataset `avhrr_orbseg`, 1992/04\~1999/09, not only North America):
+    `ao14101797050456_012257.l1b` (NOAA-14 1997/10/17 05:04\~05:37, 33 continuous minutes) is POD with a 122-byte TBM and is read as is;
+    Super Typhoon Ivan (05:21Z, 14.5N 130.6E) is complete (the Japanese station data of the same pass are broken near the typhoon,
+    where the satellite was too low). It is listed with the source USGS: the file name is an EarthExplorer Entity ID (`AO` + 14 digits),
+    or the file has a 122-byte TBM and the station code of its dataset name is `SF` (Sioux Falls; renamed files are recognized too).
+    Chiba = station products such as processing block `B0000000` (a 122-byte TBM counts only when the file has no dataset name);
+    everything else is CLASS.
 
 ### NOAA AVHRR HRPT raw frames (Level 0)
 
@@ -270,6 +285,11 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     TIROS-N\~NOAA-19; addresses used by more than one satellite are resolved by year); `noaa18`, `n14` and the like in the path take precedence.
   - Raw frames carry no year: it is taken from a date in the path (`2003-02-04/`, `20130811.063140.noaa18.raw.xz`), otherwise from the
     modification time of the file (or tar member).
+  - Chiba University CEReS L0 (`20141007163202.n19.l0.bz2`, `n1297121720.gi.bz2`): 16-bit big-endian words after a 240-byte ANSI tape label
+    (`vol1` + `hdr1` + `hdr2`, 80 bytes each), which is skipped. The year comes from the file name: a date followed directly by the time
+    (`yyyymmddhhmmss`), or `n` + satellite number + `yymmddhh` (used only when none of the original forms matches, so paths that were
+    parsed before give the same result); `n12…` also identifies the satellite. Bytes 13\~16 of vol1 hold the size of the whole file and give
+    the number of frames and the end time of a .bz2 (ignored when they do not fit the frame length).
   - Samples: the three tars in `D:\github\L0` (2003/02/04 NOAA-14\~17, 2013/08/11 and 2013/11/07 NOAA-15/16/18/19; 42 passes).
 * TLEs: raw frames carry no orbit data, so the satellite position is computed from TLEs (SGP4; needs the `sgp4` or `pyorbital` package).
   - TLEs are read from `[tle] dir` in `Satima-PO.toml` (default `tle/`, including subfolders and .zip) and from the `.tle` / `.txt` files in
@@ -300,6 +320,9 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   - No clock correction: the raw time codes lack NOAA's clock correction, leaving a constant along-track offset. Against the CLASS GAC of
     2013/11/07, NOAA-18 runs 0.225 s fast, about 1.5 km along track (the 2013/08/11 coastlines show about −1.8 km); NOAA-19 0.05 s,
     NOAA-15 0.003 s.
+  - Against the Chiba L1B of the same pass (Space-Track TLEs): NOAA-12 (1997; no fit, default parameters) differs by 1.2 km at nadir and
+    about 6.5 km at both scan edges; NOAA-19 (2014) by 1.2 km at nadir and 7.7 / 11.5 km at the edges. How Chiba navigates its L1B is not
+    known, and which one is closer has not been checked against coastlines yet.
 * Time: damaged time codes are repaired as in AVHRR-L1B. These frames are treated as missing: fewer than 4 matching sync words, flagged as
   test signal in the KLM ID word, or a repeat of the previous frame (same time code and minor frame number; as in AAPP).
   Reception gaps (e.g. about 90 frames missing between 00:59:59 and 01:00:14 in the 2003/02/04 NOAA-17 pass) show up as a band without data.
@@ -311,6 +334,10 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   - End to end: the 2013/11/07 raw frames averaged to GAC pixels (GAC pixel n = LAC samples 5n\~5n+3; counts differ by 0.25) compared with
     the operational calibration of the CLASS GAC: CH4 median difference −0.020 K for NOAA-18, −0.033 K for NOAA-19, −0.022 K for NOAA-15
     (5th\~95th percentile about ±0.15 K).
+  - The Chiba L0 and L1B of the same pass have 100% identical counts. For NOAA-19 the IR is identical to the L1B (both calibrated from the
+    PRTs). The NOAA-12 PRT coefficients (pygac) have not been verified: the blackbody temperature they give (about 291.0 K) is 0.3\~0.7 K
+    above the one implied by the Chiba 1b coefficients, and the brightness temperatures are higher by about as much (Paka's eye 23.5°C,
+    21.9°C from the L1B).
   - Visible: NOAA-16\~19 use the NOAA STAR in-orbit coefficients (F. Wu's vicarious calibration over the Libyan desert, one set per month;
     the files shipped with AAPP, in `conversion_table/AVHRR/`), taking the set whose Center date is closest to the observation. Coverage:
     NOAA-16 2003/05\~2014, NOAA-17 2004/02\~2010, NOAA-18 2005/10\~2017, NOAA-19 2009\~2017. More than 120 days before the first set,

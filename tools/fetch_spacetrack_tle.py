@@ -38,7 +38,7 @@ SATELLITES = {
     'NOAA-16': (26536, 2000, 2014), 'NOAA-17': (27453, 2002, 2013), 'NOAA-18': (28654, 2005, 2025),
     'NOAA-19': (33591, 2009, 2025),
 }
-FIRST_YEAR = 2005
+FIRST_YEAR = 1990
 
 
 def credentials():

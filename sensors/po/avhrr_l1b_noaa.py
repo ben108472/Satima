@@ -141,17 +141,23 @@ def _names(raw):
 class Structure:
     """檔案結構：layout (POD / KLM)、kind (GAC / LAC)、dtype ('GAC'、'LAC'、'HRPT'、'FRAC')、prefix、record、first (第一筆資料
     的位置)、nlines、satellite、generation、version (KLM 表頭版本)、time / end (表頭的起訖時間)、station (前置檔頭或
-    B0000000 = 接收站自行產生，例如千葉大學)、header (表頭記錄 bytes)。"""
+    B0000000 = 接收站自行產生，例如千葉大學)、header (表頭記錄 bytes)、name (檔內的資料集名稱，沒有時 None)。"""
 
     def __init__(self, **kw):
         self.__dict__.update(kw)
 
 
-def sniff(path, head=None):
-    """依檔案內容判斷是否為 NOAA AVHRR 1b；不是時回傳 None (不丟例外，用於掃描資料夾)。"""
+UNKNOWN_SIZE = -1                   # 壓縮檔 (.bz2) 不讀完整個檔就不知道解壓後的大小
+
+
+def sniff(path, head=None, size=None):
+    """依檔案內容判斷是否為 NOAA AVHRR 1b；不是時回傳 None (不丟例外，用於掃描資料夾)。
+    壓縮檔由呼叫端傳入解壓後的開頭 head (至少 COMPRESSED_HEAD bytes 或整個檔) 與解壓後的大小 size
+    (不知道時 UNKNOWN_SIZE：不檢查大小是否為記錄長度的整數倍，掃描線數先用表頭的記錄數，讀檔時再以實際長度為準)。"""
     try:
-        size = os.path.getsize(path)
-        if size < 3 * 3220:
+        if size is None:
+            size = os.path.getsize(path)
+        if size != UNKNOWN_SIZE and size < 3 * 3220:
             return None
         if head is None:
             with open(path, 'rb') as f:
@@ -178,14 +184,17 @@ def _try_klm(path, size, head, pre):
         return None
     kind = 'GAC' if dt == 2 else 'LAC'
     rec = RECORD[(KLM, kind)]
-    if (size - pre) % rec:
+    if size != UNKNOWN_SIZE and (size - pre) % rec:
         return None
     t0 = _datetime(int.from_bytes(h[84:86], 'big'), int.from_bytes(h[86:88], 'big'), int.from_bytes(h[88:92], 'big'))
     if t0 is None:
         return None
     t1 = _datetime(int.from_bytes(h[96:98], 'big'), int.from_bytes(h[98:100], 'big'),
                    int.from_bytes(h[100:104], 'big'))
-    nlines = (size - pre) // rec - nhdr
+    if size == UNKNOWN_SIZE:            # 表頭的資料記錄數 (KLM Guide §8.3.1.3.1，第 129~130 byte)
+        nlines = int.from_bytes(h[128:130], 'big')
+    else:
+        nlines = (size - pre) // rec - nhdr
     if nlines < 1:
         return None
     names = _names(head[:pre] + h[22:64])
@@ -194,7 +203,8 @@ def _try_klm(path, size, head, pre):
         station = 'B0000000' in head[:pre].decode('latin1')
     return Structure(layout=KLM, kind=kind, dtype=DATA_TYPES[dt], prefix=pre, record=rec, first=pre + nhdr * rec,
                      nlines=nlines, satellite=sat, generation=GENERATION.get(sat, 3), version=ver, time=t0,
-                     end=t1 if t1 and t1 >= t0 else None, station=station, header=bytes(h[:rec][:1024]))
+                     end=t1 if t1 and t1 >= t0 else None, station=station, header=bytes(h[:rec][:1024]),
+                     name=names[0].group(0) if names else None)
 
 
 def _try_pod(path, size, head, pre):
@@ -204,7 +214,7 @@ def _try_pod(path, size, head, pre):
         return None
     kind = 'GAC' if dt == 2 else 'LAC'
     rec = RECORD[(POD, kind)]
-    if (size - pre) % rec:
+    if size != UNKNOWN_SIZE and (size - pre) % rec:
         return None
     y, d, ms = _pod_time(h[2:8])
     year = int.from_bytes(h[38:40], 'big')        # 1998/12 以後的表頭有四位數年份；更早的版本這裡可能是殘留資料
@@ -216,16 +226,23 @@ def _try_pod(path, size, head, pre):
     y1, d1, ms1 = _pod_time(h[10:16])
     t1 = _datetime(year + (1 if d1 < d else 0), d1, ms1)
     nskip = 2 if kind == 'GAC' else 1
-    nlines = (size - pre) // rec - nskip
+    if size == UNKNOWN_SIZE:            # 表頭的掃描線數 (POD Guide 表 2.0.4-1，第 9~10 byte；GAC 偶爾差 1 條)
+        nlines = int.from_bytes(h[8:10], 'big')
+    else:
+        nlines = (size - pre) // rec - nskip
     if nlines < 1:
         return None
     names = _names(head[:pre] + h[40:84])
     if not names:
         # 沒有資料集名稱：第一筆資料的時間應接近表頭的起始時間 (避免把其他格式誤認)
         try:
-            with open(path, 'rb') as f:
-                f.seek(pre + nskip * rec)
-                r = f.read(8)
+            at = pre + nskip * rec
+            if len(head) >= at + 8:     # 壓縮檔：解壓後的開頭已含第一筆資料
+                r = head[at:at + 8]
+            else:
+                with open(path, 'rb') as f:
+                    f.seek(at)
+                    r = f.read(8)
             y2, d2, ms2 = _pod_time(r[2:8])
             if d2 != d or abs(ms2 - ms) > 600_000:
                 return None
@@ -233,13 +250,14 @@ def _try_pod(path, size, head, pre):
             return None
     guess = POD_IDS.get(sc, ())
     sat, station = _satellite(names, None, t0, path, guess + ((KLM_IDS[sc],) if sc in KLM_IDS else ()))
-    if pre == 122:
+    if pre == 122 and not names:        # 有資料集名稱時以處理區塊 B0000000 判斷 (USGS 的 1b 也有 TBM，但區塊是正常編號)
         station = True
     if sat is None:
         return None
     return Structure(layout=POD, kind=kind, dtype=DATA_TYPES[dt], prefix=pre, record=rec, first=pre + nskip * rec,
                      nlines=nlines, satellite=sat, generation=GENERATION.get(sat, 2), version=0, time=t0,
-                     end=t1 if t1 and t1 >= t0 else None, station=station, header=bytes(h[:1024]))
+                     end=t1 if t1 and t1 >= t0 else None, station=station, header=bytes(h[:1024]),
+                     name=names[0].group(0) if names else None)
 
 
 def _satellite(names, by_id, t0, path, candidates=()):

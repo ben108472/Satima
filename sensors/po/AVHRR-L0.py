@@ -8,6 +8,8 @@ AVHRR-L0 — TIROS-N ~ NOAA-19 AVHRR 的 HRPT 原始框 (Level 0：接收站直�
   依框同步字判斷，衛星由 ID 字的衛星位址判斷 (AAPP 的對照表；同一位址依年份區分，路徑中的 noaa12、n12 等字樣優先)。
   原始框沒有年份：取路徑中的日期 (例如 2003-02-04/、20130811.063140.noaa18.raw)，沒有時取檔案的修改時間。
   同一個檔同時在 .tar 與資料夾中時只列一次。
+  千葉大學 CEReS 的 L0 (20141007163202.n19.l0.bz2、n1297121720.gi.bz2)：開頭 240 bytes 的 ANSI 磁帶標籤 (vol1/hdr1/hdr2)
+  辨識時跳過，年份取自這兩種檔名 (原本的日期寫法都對不上時才用)；細節見 avhrr_hrpt.py。
 
 定位 (需要 TLE 與 sgp4 或 pyorbital 套件)
   - 原始框沒有軌道資料：以 [tle] dir (預設 Satima.py 旁的 tle/) 與資料目錄中的 TLE 推算衛星位置 (SGP4)，取 epoch 最接近
@@ -259,9 +261,10 @@ class AvhrrL0File(l1b.AvhrrL1bFile):
 class AvhrrL0Reader(l1b.AvhrrL1bReader):
     NAME = 'AVHRR-L0'
     SENSOR = 'AVHRR'
-    DESCRIPTION = 'TIROS-N~NOAA-19 AVHRR HRPT 原始框 (Level 0；.raw / .raw.xz，可直接讀 .tar；依內容辨識，定位需要 TLE)'
-    DESCRIPTION_EN = ('TIROS-N~NOAA-19 AVHRR HRPT raw frames (Level 0; .raw / .raw.xz, also inside .tar; detected by '
-                      'content; navigation needs TLEs)')
+    DESCRIPTION = ('TIROS-N~NOAA-19 AVHRR HRPT 原始框 (Level 0；.raw / .raw.xz、千葉 .l0.bz2 / .gi.bz2，可直接讀 .tar；'
+                   '依內容辨識，定位需要 TLE)')
+    DESCRIPTION_EN = ('TIROS-N~NOAA-19 AVHRR HRPT raw frames (Level 0; .raw / .raw.xz, Chiba .l0.bz2 / .gi.bz2, also inside '
+                      '.tar; detected by content; navigation needs TLEs)')
     SOURCE = 'Station'
     PATTERNS = ('*',)
 

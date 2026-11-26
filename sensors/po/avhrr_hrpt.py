@@ -16,7 +16,12 @@ HRPT 小框 (minor frame) 每條掃描線一框，11090 個 10-bit 字 (POD Guid
 檔案
   - 每個字存成 16 bits (高 6 bits 為 0)，小端或大端都可 (自動判斷)；每框 22180 bytes，框的位置依同步字找。
   - 可以是未壓縮的檔、.xz / .gz / .bz2 壓縮檔，或未壓縮的 .tar 封存檔中的這些檔 (不必先解開；路徑寫成 封存檔::成員)。
+  - 開頭可以有 ANSI 磁帶標籤 (VOL1、HDR1、HDR2…，各 80 bytes 的 ASCII 記錄)：千葉大學 CEReS 的 L0 檔 (.l0、.gi)
+    前面有 vol1 + hdr1 + hdr2 = 240 bytes，辨識時跳過。vol1 的第 13~16 byte 是整個檔 (含標籤) 的大小 (大端)，
+    .bz2 無法事先得知解壓後的大小，用它推算框數與結束時間 (與框長對不上時不用)。
   - 衛星：ID 字的衛星位址 (AAPP 的對照表，同一位址依年份區分)，其次路徑中的 noaa18、n14 等字樣。
+  - 年份：路徑中的日期 (見 infer_year)；千葉的檔名 20141007163202.n19.l0 (日期緊接時刻) 與 n1297121720.gi
+    (n + 衛星編號 + yymmddhh) 也可以 (原本支援的寫法都先比對，對不上才看這兩種)。
 """
 import bz2
 import datetime
@@ -58,6 +63,8 @@ NAV_PARAMS = {
 NAV_DEFAULT = (-0.03, 0., 0., STEP_DEG)    # 沒有擬合的衛星：各衛星共有的約 −0.03° roll (約半個樣本)
 TAR_SEP = '::'
 COMPRESSED = {'.xz': lzma.open, '.lzma': lzma.open, '.gz': gzip.open, '.bz2': bz2.open}
+LABEL_BYTES = 80                # ANSI 磁帶標籤記錄的長度
+LABEL_IDS = (b'VOL', b'HDR', b'UHL', b'UVL', b'EOF', b'EOV', b'UTL')
 SKIP_EXT = {'.png', '.jpg', '.jpeg', '.gif', '.txt', '.pdf', '.py', '.pyc', '.toml', '.nc', '.h5', '.he5', '.hdf',
             '.zip', '.7z', '.tif', '.tiff', '.xml', '.json', '.md', '.csv', '.log', '.ini', '.tle', '.dat'}
 
@@ -221,6 +228,24 @@ class Structure:
         self.__dict__.update(kw)
 
 
+def label_size(buf):
+    """開頭的 ANSI 磁帶標籤 (VOL1、HDR1、HDR2…：前 3 個字元為標籤代號、第 4 個為數字，每筆 80 bytes) 的總長度；沒有時 0。"""
+    k = 0
+    while buf[k:k + 3].upper() in LABEL_IDS and buf[k + 3:k + 4].isdigit():
+        k += LABEL_BYTES
+    return k
+
+
+def label_file_size(buf, offset):
+    """千葉的 vol1 標籤第 13~16 byte 記錄的檔案大小 (大端)；與第一框的位置、框長對得上才採用，否則 None。"""
+    if buf[:4].upper() != b'VOL1':
+        return None
+    size = int.from_bytes(buf[12:16], 'big')
+    if size >= offset + FRAME_BYTES and (size - offset) % FRAME_BYTES == 0:
+        return size
+    return None
+
+
 def find_frames(buf):
     """在一段位元組中找框：回傳 (字序, 第一框的位元組位置)；找不到 None。
     條件：字都 <= 1023 (16 bits 存 10-bit 值)，且至少兩個同步字 (前 4 個字) 的間隔是框長的整數倍。"""
@@ -276,31 +301,61 @@ _DATE = re.compile(r'(?<!\d)((?:19[6-9]|20[0-9])\d)[-_.]?(0[1-9]|1[0-2])[-_.]?(0
 _SAT_NAMES = [(re.compile(r'tiros[-_ ]?n', re.I), 'TIROS-N'),
               (re.compile(r'noaa[-_ ]?(\d{1,2})(?!\d)', re.I), None),
               (re.compile(r'(?:^|[^a-z0-9])n(\d{2})(?=[_.-])', re.I), None)]
+# 千葉大學 CEReS 的檔名 (上面的寫法都對不上時才用，原本能解析的路徑結果不變)：
+#   日期緊接時刻 yyyymmddhhmm[ss]，例如 20141007163202.n19.l0
+#   n + 衛星編號 + yymmdd[hh]，例如 n1297121720.gi (NOAA-12，1997/12/17 20 時)
+_DATE_TIME = re.compile(r'(?<!\d)((?:19[6-9]|20[0-9])\d)(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])'
+                        r'(?:[01]\d|2[0-3])[0-5]\d(?:[0-5]\d)?(?!\d)')
+_CHIBA_NAME = re.compile(r'(?:^|[^a-z0-9])n(\d{2})(\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?:[01]\d|2[0-3])?'
+                         r'(?=[_.-]|$)', re.I)
+
+
+def _path_parts(path):
+    """路徑的各段，由檔名往上。"""
+    return list(reversed(re.split(r'[\\/]|' + re.escape(TAR_SEP), path)))
 
 
 def satellite_from_path(path):
-    """路徑中的衛星名稱 (由檔名往上找)。"""
-    parts = re.split(r'[\\/]|' + re.escape(TAR_SEP), path)
-    for part in reversed(parts):
+    """路徑中的衛星名稱 (由檔名往上找)；原本的寫法都找不到時再找千葉的 nSSyymmddhh。"""
+    parts = _path_parts(path)
+    for part in parts:
         for rx, name in _SAT_NAMES:
             m = rx.search(part)
             if m:
                 sat = name or 'NOAA-%d' % int(m.group(1))
                 if sat in fmt.GENERATION:
                     return sat
+    for part in parts:
+        for m in _CHIBA_NAME.finditer(part):
+            sat = 'NOAA-%d' % int(m.group(1))
+            if sat in fmt.GENERATION:
+                return sat
     return None
 
 
+def _two_digit_year(yy):
+    return 1900 + yy if yy >= 57 else 2000 + yy
+
+
 def _dates_in_path(path):
-    parts = re.split(r'[\\/]|' + re.escape(TAR_SEP), path)
-    out = []
-    for part in reversed(parts):
+    """路徑中的日期 (由檔名往上)：原本的寫法 (_DATE) 全部排在前面，千葉的兩種寫法排在最後。"""
+    parts = _path_parts(path)
+    out, extra = [], []
+    for part in parts:
         for m in _DATE.finditer(part):
             try:
                 out.append(datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
             except ValueError:
                 pass
-    return out
+    for part in parts:
+        found = [(int(m.group(1)), m.group(2), m.group(3)) for m in _DATE_TIME.finditer(part)]
+        found += [(_two_digit_year(int(m.group(2))), m.group(3), m.group(4)) for m in _CHIBA_NAME.finditer(part)]
+        for y, mo, d in found:
+            try:
+                extra.append(datetime.date(y, int(mo), int(d)))
+            except ValueError:
+                pass
+    return out + extra
 
 
 def infer_year(path, doy):
@@ -328,13 +383,15 @@ def sniff(path):
     try:
         with open_stream(path) as f:
             head = f.read(8192)
-            if len(head) < 8192 or not _ten_bit(head):
+            skip = label_size(head)                 # 千葉的 vol1/hdr1/hdr2 標籤 (沒有標籤時 0)
+            if len(head) < 8192 or not _ten_bit(head[skip:]):
                 return None
             # 先讀 FIRST_FRAMES 框；接收開頭的框常同步不良，好的框太少時再多讀到 HEAD_FRAMES 框
             for nframes in (FIRST_FRAMES, HEAD_FRAMES):
-                head += f.read((nframes + 1) * FRAME_BYTES - len(head))
-                found = find_frames(head) if len(head) >= 2 * FRAME_BYTES else None
+                head += f.read((nframes + 1) * FRAME_BYTES + skip - len(head))
+                found = find_frames(head[skip:]) if len(head) - skip >= 2 * FRAME_BYTES else None
                 if found is not None:
+                    found = (found[0], found[1] + skip)
                     w = frame_words(head, *found)
                     good = sync_count(w) >= 5
                     if good.sum() >= 5:
@@ -370,6 +427,8 @@ def sniff(path):
     ms0 = float(np.median(t_rel))
     time = datetime.datetime(year, 1, 1) + datetime.timedelta(days=doy - 1, milliseconds=ms0)
     size = raw_size(path)
+    if size is None and skip:                       # .bz2 等不知道解壓後大小的檔：用千葉 vol1 標籤記錄的大小
+        size = label_file_size(head, offset)
     nframes = (size - offset) // FRAME_BYTES if size else None
     end = time + datetime.timedelta(seconds=nframes * LINE_SECONDS) if nframes else None
     return Structure(order=order, offset=offset, satellite=sat, generation=fmt.GENERATION.get(sat, 3), time=time,

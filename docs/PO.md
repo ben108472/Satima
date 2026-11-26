@@ -97,8 +97,8 @@ Projection: 1.MERC  2.CYL  3.LCC
 | SGLI-HDF5 | GCOM-C SGLI | `GC1SG1_*_1BSG_*.h5` | VN01–VN11、SW01–SW04 反射率、TI01–TI02 亮溫、真實色 (RGB / CORR / WV) |
 | MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10：CH3–CH5 亮溫，其餘反射率；真實色 (RGB / CORR / WV) |
 | AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B 依掃描線切換) |
-| AVHRR-L1B | TIROS-N~NOAA-19、MetOp AVHRR/1、/2、/3 | NOAA Level 1b (POD / KLM)：CLASS 的 `NSS.GHRR/LHRR/HRPT/FRAC.*`、千葉大學 HRPT；**依內容辨識，不看檔名** | CH1–CH5 (AVHRR/3 的 CH3A / CH3B 依掃描線切換；AVHRR/1 沒有 CH5) |
-| AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1、/2、/3 | HRPT 原始框 (Level 0)：接收站收錄的 `.raw` / `.raw.xz` 等，可直接放 `.tar`；**依內容辨識**；定位需要 TLE | 同 AVHRR-L1B |
+| AVHRR-L1B | TIROS-N~NOAA-19、MetOp AVHRR/1、/2、/3 | NOAA Level 1b (POD / KLM)：CLASS 的 `NSS.GHRR/LHRR/HRPT/FRAC.*`、千葉大學 HRPT (含 `.l1b.bz2`)，也可以是 `.gz` / `.bz2` / `.xz`；**依內容辨識，不看檔名** | CH1–CH5 (AVHRR/3 的 CH3A / CH3B 依掃描線切換；AVHRR/1 沒有 CH5) |
+| AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1、/2、/3 | HRPT 原始框 (Level 0)：接收站收錄的 `.raw` / `.raw.xz` 等、千葉大學的 `.l0.bz2` / `.gi.bz2`，可直接放 `.tar`；**依內容辨識**；定位需要 TLE | 同 AVHRR-L1B |
 
 SGLI 的 VN07 / VN10 是高增益 (海色) 頻道，雲上約在反射率 0.16 / 0.13 就飽和，VN08 約 0.49 飽和；畫雲請用 VN11 (868.5 nm)。
 
@@ -209,6 +209,9 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
   - 資料夾中的每個檔依內容判斷：檔案大小與記錄長度、表頭欄位、前置檔頭 (0 / 122 bytes TBM / 512 bytes)；改過檔名也能讀。
   - 衛星以檔內的資料集名稱 (`NSS.HRPT.NN.…`) 為準，其次是表頭的衛星 ID (POD 與 KLM 的編號不同)。
   - 千葉大學的檔 (處理區塊 `B0000000`) 在列表的資料來源顯示為 Chiba。它把 NOAA-18 存成 POD 格式，表頭 ID 7 在 POD 裡是 NOAA-9。
+  - 壓縮檔 `.gz` / `.bz2` / `.xz` (例如千葉的 `n1297121720.l1b.bz2`) 不必先解開：列表時只解壓開頭判斷，畫圖時整個解壓進記憶體
+    (不在磁碟留下解壓檔；.bz2 解壓 70 MB 約 2\~3 秒)。.bz2 事先不知道解壓後的大小，掃描線數先取表頭的記錄數，讀檔時以實際長度為準。
+    內層副檔名在略過清單的不檢查 (例如 HSD 的 `.DAT.bz2`)；同一個檔的壓縮與未壓縮版本都在時只列未壓縮的。
 * 頻道：AVHRR/3 同 AVHRR-NSMC (CH3A / CH3B 依掃描線 bit 域切換；KLM 衛星存成 POD 格式時依頻道 3 定標斜率的正負)。
   AVHRR/2 (NOAA-7、9、11、12、13、14) 為 CH1\~CH5；AVHRR/1 (TIROS-N、NOAA-6、8、10) 為 CH1\~CH4。
 * 可見光定標：反射率 = 反照率 / 100，未除 cos(太陽天頂角)。
@@ -244,6 +247,14 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
   - 接收站資料的位元錯誤雜點 (千葉 NOAA-17 約 10%、NOAA-18 約 2% 的像元分裂窗差不合理；CLASS < 0.1%)
     與過境頭尾的條紋，目前照原值畫出。
   - 沒有樣本：TIROS-N、NOAA-6/7/8/13、MetOp (NOAA 1b)、FRAC。
+  - 千葉的 `.l1b.bz2` (1997/12/17 NOAA-12 兩次過境、2014/10/07 NOAA-19)：與解壓後的檔逐項相同 (定位、時間、定標)；
+    超級颱風 Paka (1997/12/17 21Z，14.1N 140.7E) 的眼清楚。2014 年的 NOAA-19 約 30% 掃描線無資料、部分區段雜點很多，
+    與同一次過境的 L0 逐位元相同，是接收的問題。
+  - USGS EarthExplorer 的 AVHRR Orbital Segment (M2M 資料集 `avhrr_orbseg`，1992/04\~1999/09，不只北美)：
+    `ao14101797050456_012257.l1b` (NOAA-14 1997/10/17 05:04\~05:37，33 分鐘連續) 為 POD + 122 bytes TBM，可直接讀；
+    超級颱風 Ivan (05:21Z，14.5N 130.6E) 完整 (同一軌的日本接收站資料在颱風附近仰角太低而殘缺)。
+    列表的資料來源顯示 USGS：檔名為 EarthExplorer 的 Entity ID (`AO` + 14 位數字)，或有 122 bytes TBM 且資料集名稱的站碼為
+    `SF` (Sioux Falls；改過檔名也認得)。千葉 = 處理區塊 `B0000000` 等接收站產品 (122 bytes TBM 只在沒有資料集名稱時才算)，其他為 CLASS。
 
 ### NOAA AVHRR HRPT 原始框 (Level 0)
 
@@ -253,6 +264,10 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
   - 依框同步字辨識，不看檔名。衛星由 ID 字的衛星位址判斷 (AAPP 的對照表，TIROS-N\~NOAA-19；同一位址依年份區分)，
     路徑中的 `noaa18`、`n14` 等字樣優先。
   - 原始框沒有年份：取路徑中的日期 (`2003-02-04/`、`20130811.063140.noaa18.raw.xz`)，沒有時取檔案 (或 tar 成員) 的修改時間。
+  - 千葉大學 CEReS 的 L0 (`20141007163202.n19.l0.bz2`、`n1297121720.gi.bz2`)：每字 16 bits 大端，前面有 240 bytes 的 ANSI 磁帶標籤
+    (`vol1` + `hdr1` + `hdr2`，各 80 bytes)，辨識時跳過。年份取自檔名：日期緊接時刻 (`yyyymmddhhmmss`) 與 `n` + 衛星編號 +
+    `yymmddhh` 兩種寫法 (只在原本的寫法都對不上時才用，原本能解析的路徑結果不變)；`n12…` 也用來判斷衛星。
+    vol1 的第 13\~16 byte 是整個檔的大小，用來推算 .bz2 的框數與結束時間 (與框長對不上時不用)。
   - 樣本：`D:\github\L0` 的三個 tar (2003/02/04 NOAA-14\~17、2013/08/11 與 2013/11/07 NOAA-15/16/18/19，共 42 次過境)。
 * TLE：原始框沒有軌道資料，以 TLE (SGP4，需要 `sgp4` 或 `pyorbital` 套件) 推算衛星位置。
   - 讀 `Satima-PO.toml` 的 `[tle] dir` (預設 `tle/`，含子資料夾與 .zip) 與資料目錄中的 `.tle` / `.txt`，取 epoch 最接近觀測的一組；
@@ -276,6 +291,8 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
   - 獨立驗證 (擬合沒有用到的 2013/08/11 過境)：多數區塊的誤差由 1\~5 km 降到 1 km 內。
   - 不做時鐘修正：原始時間碼沒有 NOAA 的時鐘修正，會留下固定的沿軌差。以 2013/11/07 的 CLASS GAC 比對，NOAA-18 快 0.225 秒，
     約沿軌 1.5 km (2013/08/11 的海岸線也顯示約 −1.8 km)；NOAA-19 0.05 秒、NOAA-15 0.003 秒。
+  - 與千葉 L1B 的定位比較 (同一次過境，Space-Track TLE)：NOAA-12 (1997，未擬合，用預設參數) 星下點差 1.2 km、掃描兩側邊緣約 6.5 km；
+    NOAA-19 (2014) 星下點 1.2 km、邊緣 7.7 / 11.5 km。千葉 L1B 的定位方法不明，哪一邊較準尚未以海岸線確認。
 * 時間：同 AVHRR-L1B 修復受損的時間碼。以下的框為無資料：框同步字對不到 4 個、KLM 的 ID 字顯示為測試訊號、
   與前一框重複 (時間碼與小框編號相同；同 AAPP)。
   接收中斷的時段 (例如 2003/02/04 NOAA-17 在 00:59:59\~01:00:14 少了約 90 框) 在圖上是一條無資料帶。
@@ -285,6 +302,9 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
     NOAA-14 的頻帶修正 (ν、A、B) pygac 與 AAPP 的值不同，換算的亮溫只差 0.01 K 以內。
   - 端對端驗證：2013/11/07 的原始框平均成 GAC 像元 (GAC 像元 n = LAC 樣本 5n\~5n+3，計數相差 0.25) 後與 CLASS GAC 的業務定標比較，
     CH4 亮溫差中位數 NOAA-18 −0.020 K、NOAA-19 −0.033 K、NOAA-15 −0.022 K (第 5\~95 百分位約 ±0.15 K)。
+  - 千葉的 L0 與 L1B (同一次過境) 的計數 100% 相同。NOAA-19 的紅外與 L1B 完全相同 (兩者都由 PRT 定標)；
+    NOAA-12 的 PRT 係數 (pygac) 沒有驗證過，換算的黑體溫度 (約 291.0 K) 比千葉 1b 係數隱含的高 0.3\~0.7 K，亮溫也高約這麼多
+    (Paka 的眼溫 23.5°C，L1B 為 21.9°C)。
   - 可見光：NOAA-16\~19 用 NOAA STAR 的在軌係數 (F. Wu 以利比亞沙漠做的替代定標，每月一組；AAPP 附的檔，放在
     `conversion_table/AVHRR/`)，取 Center 日期最接近觀測者。涵蓋期間：NOAA-16 2003/05\~2014、NOAA-17 2004/02\~2010、
     NOAA-18 2005/10\~2017、NOAA-19 2009\~2017。早於第一組 120 天以上時，在發射日 (發射前係數) 與第一組之間內插；
