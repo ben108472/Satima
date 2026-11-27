@@ -376,6 +376,7 @@ class AvhrrL1bFile:
         self._cache = {}
         self.label = os.path.basename(fullname)
         self.table_dir = None               # 校正表目錄 (STAR 可見光係數；讀取器建立檔案時設定)
+        self.cfg = None                     # 讀取器的設定 (接收站 1b 以 TLE 重新定位時用；讀取器建立檔案時設定)
 
     def __lt__(self, other):
         return self.time < other.time
@@ -465,6 +466,10 @@ class AvhrrL1bFile:
                 & ~((lat == 0.) & (lon == 0.)).all(axis=1) & ((quality >> no_nav_bit) & 1 == 0))
         good &= self._continuous(lat, lon, good)
         times, fixed = self._times(year, day, ms, scan)
+        renav = self._renavigate(times)
+        if renav is not None:
+            lat, lon = renav
+            good = np.isfinite(lat).all(axis=1)
         lat[~good], lon[~good] = np.nan, np.nan
         self._nav = dict(lat=lat, lon=lon, time=times, good=good)
         bad = int((~good).sum())
@@ -473,6 +478,23 @@ class AvhrrL1bFile:
                      '%s: %d scanlines with invalid navigation, %d with damaged time codes (replaced by the expected time)')
                   % (self.label, bad, fixed))
         return self._nav
+
+    def _renavigate(self, times):
+        """接收站產品 (千葉等) 的 LAC/HRPT：以 TLE 重新定位 (同 AVHRR-L0：大地天底 + 各衛星的定位參數)，
+        取代檔內的定位點；[tle] station_l1b = false、GAC 或沒有 TLE 時 None (用檔內的定位)。
+        千葉檔內的定位與海岸線相差 3.5~6 km (NOAA-12)、掃描邊緣到 8~11 km (NOAA-19 沒有修正 yaw)。"""
+        cfg = self.cfg
+        if not self.station or self.s.kind == 'GAC' or cfg is None or not cfg.get('tle') \
+                or not cfg.tle.get('station_l1b', True):
+            return None
+        try:
+            lat, lon = hrpt.navigate(cfg, self.satellite, self.time, times, 24. + 40. * np.arange(51), self.label)
+        except ValueError as err:
+            print(tr('%s (改用檔內的定位)', '%s (using the navigation in the file)') % err)
+            return None
+        print(tr('%s：接收站產品，以 TLE 重新定位 ([tle] station_l1b)', '%s: station product; navigated from the TLE '
+                 '([tle] station_l1b)') % self.label)
+        return lat, lon
 
     @staticmethod
     def _continuous(lat, lon, good):
@@ -734,7 +756,7 @@ class AvhrrL1bFile:
             if method == 'operational':
                 a = coef[r0:r1]
                 return a[:, 0:1] + a[:, 1:2] * c + a[:, 2:3] * c * c
-        elif self.generation < 3:
+        elif self.generation < 3 and not self._station_raw(ch):
             sp, ict = self._space_ict(ch)
             cal = self._field('cal')[:, ch - 1].astype(np.float64)
             s, i = cal[:, 0] / 2 ** 30, cal[:, 1] / 2 ** 22
@@ -763,6 +785,21 @@ class AvhrrL1bFile:
                      '(KLM Guide 7.1.2.4)') % (self.label, ch))
         self._cache[('irmethod', ch)] = 'raw'
         return self._ir_raw(ch, c, r0, r1)
+
+    def _station_raw(self, ch):
+        """POD 格式的接收站產品 (千葉 NOAA-12/14 等)：能由 PRT 自行定標時改用它 (同 AVHRR-L0 與 AAPP 的 PRT 係數)。
+        千葉 1b 係數隱含的黑體溫度比 PRT 換算的低 0.3~0.7 K (NOAA-12)；CLASS 的 1b 則與 PRT 一致 (±0.01 K)。"""
+        if not self.station:
+            return False
+        if ('stationraw', ch) not in self._cache:
+            ok = self._raw_possible(ch)
+            self._cache[('stationraw', ch)] = ok
+            if ok:
+                self._cache[('rawmsg', ch)] = True
+                print(tr('%s CH%d：接收站產品，改由 PRT、黑體與太空計數自行定標 (KLM Guide §7.1.2.4)',
+                         '%s CH%d: station product; calibrating from the PRT, blackbody and space counts (KLM Guide 7.1.2.4)')
+                      % (self.label, ch))
+        return self._cache[('stationraw', ch)]
 
     def _ir_raw(self, ch, c, r0, r1):
         """由 PRT 黑體溫度、黑體與太空計數自行定標 (KLM Guide §7.1.2.4)：
@@ -849,6 +886,7 @@ class AvhrrL1bReader(SatReader):
     def make_file(self, name):
         f = AvhrrL1bFile(name)
         f.table_dir = self.cfg.general.conversion_table_dir
+        f.cfg = self.cfg
         return f
 
     def listing(self, f):

@@ -15,8 +15,8 @@ AVHRR-L0 — TIROS-N ~ NOAA-19 AVHRR 的 HRPT 原始框 (Level 0：接收站直�
   - 原始框沒有軌道資料：以 [tle] dir (預設 Satima.py 旁的 tle/) 與資料目錄中的 TLE 推算衛星位置 (SGP4)，取 epoch 最接近
     觀測時間的一組；相差超過 [tle] max_age 天時警告 (TLE 推算的誤差約每天 1 km 以上)。TLE 可以是任何副檔名的
     文字檔 (2 行或 3 行格式，一個檔可含多顆衛星、多個時間) 或 .zip。
-  - TLE 來源：1980~2004 年 CelesTrak 的歷史檔 (https://celestrak.org/NORAD/archives/，tle/ 已附 TIROS-N~NOAA-17)；
-    2005 年以後需從 Space-Track (https://www.space-track.org，免費帳號，gp_history) 或 CelesTrak 的申請表取得。
+  - TLE 來源：tools/fetch_spacetrack_tle.py 從 Space-Track 下載 (免費帳號，gp_history；TIROS-N~NOAA-19 全部年份)；
+    1980~2004 年也可以用 CelesTrak 的歷史檔 (https://celestrak.org/NORAD/archives/)。TLE 不隨程式附。
   - 掃描幾何：大地天底 (KLM Guide §2.2、AAPP)、掃描面垂直於慣性速度、每像元 25 µs，與 WGS84 橢球求交點；在 51 個
     定位點計算後同 AVHRR-L1B 內插。各衛星的 roll、yaw 與步進角 (avhrr_hrpt.NAV_PARAMS) 以海岸線擬合：NOAA-18 的 roll
     約 −0.18°、NOAA-19 的 yaw 約 0.33°、NOAA-16 的步進角 0.05396° (其餘 0.05406~0.05409°)，不修正時掃描邊緣差到 5~10 km。
@@ -65,8 +65,8 @@ l1b = _load_l1b()
 
 TIE_COLS = 24. + 40. * np.arange(51)        # 定位點 (同 LAC/HRPT 1b)
 IMAGE = slice(750, 10990)                   # 影像字 751~10990
-TLE_EXT = {'.tle', '.txt', '.2le', '.3le'}  # 資料目錄中當作 TLE 讀的副檔名 (TLE 目錄則讀所有檔)
-TLE_SPREAD_KM = 20.                         # 最接近的幾組 TLE 推算的位置相差超過此值時警告
+TLE_SPREAD_KM = hrpt.TLE_SPREAD_KM
+tle_table = hrpt.tle_table                  # (舊名稱)
 _SNIFF = {}
 
 
@@ -81,26 +81,6 @@ def sniff(path):
     if key not in _SNIFF:
         _SNIFF[key] = hrpt.sniff(path)
     return _SNIFF[key]
-
-
-def tle_table(cfg):
-    """[tle] dir (遞迴) 與資料目錄 (只有 TLE_EXT 的檔) 中的 TLE。"""
-    folder = str(cfg.tle.dir or '').strip()
-    if folder and not os.path.isabs(folder):
-        folder = os.path.join(cfg.get('_home', ''), folder)
-    tables = [hrpt.load_tles([folder])] if folder else []
-    here = os.getcwd()
-    try:
-        names = [n for n in os.listdir(here) if os.path.splitext(n)[1].lower() in TLE_EXT]
-    except OSError:
-        names = []
-    if names:
-        tables.append(hrpt.load_tle_files([os.path.join(here, n) for n in names]))
-    out = {}
-    for t in tables:
-        for num, items in t.items():
-            out.setdefault(num, []).extend(items)
-    return {num: sorted(set(items)) for num, items in out.items()}
 
 
 # ===== 單一檔案 =====
@@ -159,34 +139,7 @@ class AvhrrL0File(l1b.AvhrrL1bFile):
         year[day > self.s.doy + 300] -= 1
         day = np.where(good, day, 0)                        # 同步不良的框：時間碼視為受損
         times, fixed = self._times(year, day, ms, None)
-        tles = tle_table(self.cfg)
-        near = hrpt.nearest_tles(tles, self.satellite, self.time)
-        tle = near[0] if near else None
-        if tle is None:
-            raise ValueError(tr('%s：找不到 %s (NORAD %d) 的 TLE，無法定位。請把 TLE 檔放到 %s 或資料目錄 (1980~2004 年：'
-                                'CelesTrak 歷史檔；2005 年以後：Space-Track)',
-                                '%s: no TLE for %s (NORAD %d); cannot navigate. Put TLE files in %s or the data folder '
-                                '(1980-2004: CelesTrak archives; 2005 on: Space-Track)')
-                             % (self.label, self.satellite, hrpt.NORAD[self.satellite], self.cfg.tle.dir))
-        epoch, line1, line2 = tle
-        age = (self.time - epoch).total_seconds() / 86400.
-        if age >= 0:
-            msg = tr('%s：TLE epoch %s (觀測前 %.1f 天)', '%s: TLE epoch %s (%.1f days before the observation)')
-        else:
-            msg = tr('%s：TLE epoch %s (觀測後 %.1f 天)', '%s: TLE epoch %s (%.1f days after the observation)')
-        print(msg % (self.label, epoch.strftime('%Y-%m-%d %H:%M'), abs(age)))
-        if abs(age) > float(self.cfg.tle.max_age):
-            print(tr('注意：TLE 與觀測相差 %.1f 天 (超過 [tle] max_age = %g)，定位誤差可能達數公里以上',
-                     'NOTE: the TLE is %.1f days from the observation (over [tle] max_age = %g); navigation errors may '
-                     'reach several km or more') % (abs(age), float(self.cfg.tle.max_age)))
-        spread = hrpt.tle_spread(near, self.time)
-        if spread > TLE_SPREAD_KM:
-            print(tr('注意：最接近的 %d 組 TLE (epoch %s) 推算的衛星位置相差達 %.0f km，TLE 檔中可能有錯誤的根數，定位可能不準',
-                     'NOTE: the %d nearest TLEs (epochs %s) disagree by up to %.0f km in satellite position; the TLE files '
-                     'may contain bad elements and the navigation may be off')
-                  % (len(near), ', '.join(e.strftime('%m-%d %H:%M') for e, _, _ in near), spread))
-        roll, pitch, yaw, step = hrpt.NAV_PARAMS.get(self.satellite, hrpt.NAV_DEFAULT)
-        lat, lon = hrpt.geolocate(line1, line2, times, TIE_COLS, attitude=(roll, pitch, yaw), step_deg=step)
+        lat, lon = hrpt.navigate(self.cfg, self.satellite, self.time, times, TIE_COLS, self.label)
         good &= np.isfinite(lat).all(axis=1)
         lat[~good], lon[~good] = np.nan, np.nan
         self._nav = dict(lat=lat, lon=lon, time=times, good=good)

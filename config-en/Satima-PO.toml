@@ -40,9 +40,10 @@ merge_gap = 600.0        # two files count as the same segment when the gap betw
 [tle]
 # AVHRR-L0 (HRPT raw frames) carries no orbit data; the satellite position is computed from TLEs (SGP4): all TLE files in dir
 # (including subfolders and .zip) and the .tle / .txt files in the data folder are read, and the set whose epoch is closest to the observation is used.
-# 1980-2004: CelesTrak historical archives (tle/ already holds TIROS-N~NOAA-17); 2005 on: Space-Track (gp_history) or the CelesTrak request form
+# TLEs are not shipped: python tools/fetch_spacetrack_tle.py downloads them from Space-Track (free account); for 1980-2004 the CelesTrak archives also work
 dir = "tle"              # relative paths are relative to the directory of Satima.py
 max_age = 5.0            # warn when the TLE is more than this many days from the observation (the propagation error grows by about 1 km or more per day)
+station_l1b = true       # also navigate AVHRR 1b files from receiving stations (Chiba etc.) from the TLE (their own navigation is often off by several km); false = use the navigation in the file
 
 [eyetemp]
 # Infrared channels: print the highest brightness temperature within radius_deg (degrees) of the center point

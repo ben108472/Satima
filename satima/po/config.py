@@ -28,6 +28,7 @@ DEFAULTS = {
     'tle': {
         'dir': 'tle',                        # AVHRR-L0 (HRPT 原始框) 定位用的 TLE 目錄；相對路徑以 Satima.py 所在目錄為準
         'max_age': 5.0,                      # TLE epoch 與觀測時間相差超過幾天時警告
+        'station_l1b': True,                 # 接收站 (千葉等) 的 AVHRR 1b 也以 TLE 重新定位；false = 用檔內的定位
     },
     'eyetemp': {
         'enable': True,                      # 紅外線頻道：印出中心點附近的最高亮溫
@@ -79,6 +80,9 @@ def validate(cfg):
     t = cfg.tle
     if not isinstance(t.dir, str):
         fail('[tle] dir 須為字串 (目前為 %r)', '[tle] dir must be a string (got %r)', t.dir)
+    if not isinstance(t.station_l1b, bool):
+        fail('[tle] station_l1b 須為 true 或 false (目前為 %r)', '[tle] station_l1b must be true or false (got %r)',
+             t.station_l1b)
     if not (_is_num(t.max_age) and t.max_age > 0):
         fail('[tle] max_age 須為正數 (天；目前為 %r)', '[tle] max_age must be a positive number of days (got %r)',
              t.max_age)

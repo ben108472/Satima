@@ -1,6 +1,8 @@
-"""從 Space-Track 下載 NOAA 極軌衛星的歷史 TLE (AVHRR-L0 定位用)，存到 tle/spacetrack/<衛星>-<年>.txt。
+"""從 Space-Track 下載 NOAA 極軌衛星的歷史 TLE (AVHRR-L0 與接收站 1b 的定位用)，存到 tle/spacetrack/<衛星>-<年>.txt。
 
-1980~2004 年 tle/ 已有 CelesTrak 的歷史檔；這裡預設只下載 2005 年以後 (CelesTrak 不提供的部分)。
+TLE 不隨程式附 (tle/spacetrack/ 不進版控)。預設下載 TIROS-N ~ NOAA-19 從發射到停止運作的全部年份 (約 195 次查詢、10 分鐘)；
+也可以只用 --from / --to 或衛星名稱下載需要的部分。1980~2004 年另可用 CelesTrak 的歷史檔 (免帳號，
+https://celestrak.org/NORAD/archives/ 的 zip 直接放進 tle/ 即可；Space-Track 的較完整)。
 
 帳號 (Space-Track 免費註冊：https://www.space-track.org/auth/createAccount)：
   方法一：環境變數 SPACETRACK_IDENTITY (帳號 / email) 與 SPACETRACK_PASSWORD
@@ -11,12 +13,12 @@
   密碼不會印出，也不會寫進 Satima 的資料夾。
 
 用法
-  python tools/fetch_spacetrack_tle.py                     下載全部 (NOAA-12/14/15/16/17/18/19，2005 年起到停止運作)
+  python tools/fetch_spacetrack_tle.py                     下載全部 (TIROS-N ~ NOAA-19，發射到停止運作)
   python tools/fetch_spacetrack_tle.py NOAA-18 NOAA-19     只下載指定衛星
   python tools/fetch_spacetrack_tle.py --from 2013 --to 2013
   python tools/fetch_spacetrack_tle.py --force             已下載的年份也重新下載
 已存在的年份檔會略過 (中斷後重跑即可續傳)；今年的檔一律重新下載。
-Space-Track 的流量限制是每分鐘 30 次、每小時 300 次查詢，這裡每次查詢間隔 3 秒 (全部約 85 次，約 5 分鐘)。
+Space-Track 的流量限制是每分鐘 30 次、每小時 300 次查詢，這裡每次查詢間隔 3 秒 (全部約 195 次，約 10 分鐘)。
 """
 import argparse
 import datetime
@@ -32,13 +34,16 @@ BASE = 'https://www.space-track.org'
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'tle', 'spacetrack')
 PAUSE = 3.0
-# 衛星 -> (NORAD 編號, 開始年, 停止運作的年)；只下載 2005 年以後
+# 衛星 -> (NORAD 編號, 開始年, 停止運作的年) (同 sensors/po/avhrr_hrpt.NORAD 與 avhrr_l1b_noaa.SERVICE)
 SATELLITES = {
+    'TIROS-N': (11060, 1978, 1981), 'NOAA-6': (11416, 1979, 1987), 'NOAA-7': (12553, 1981, 1986),
+    'NOAA-8': (13923, 1983, 1985), 'NOAA-9': (15427, 1984, 1998), 'NOAA-10': (16969, 1986, 2001),
+    'NOAA-11': (19531, 1988, 2004), 'NOAA-13': (22739, 1993, 1993),
     'NOAA-12': (21263, 1991, 2007), 'NOAA-14': (23455, 1994, 2007), 'NOAA-15': (25338, 1998, 2025),
     'NOAA-16': (26536, 2000, 2014), 'NOAA-17': (27453, 2002, 2013), 'NOAA-18': (28654, 2005, 2025),
     'NOAA-19': (33591, 2009, 2025),
 }
-FIRST_YEAR = 1990
+FIRST_YEAR = 1978
 
 
 def credentials():

@@ -233,8 +233,9 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     the linear position from the space and blackbody counts in the telemetry, the blackbody radiance from the 1b coefficients,
     and then Walton's nonlinearity correction. For NOAA-14 this is identical to the guide's quadratic; for the other satellites
     it differs from the guide's Ns = 0 correction tables by about 0.1\~0.4 K.
-  - Station products or IR coefficients that are constant over the pass (Chiba NOAA-17), and KLM satellites stored in the POD format
-    (the Chiba NOAA-18 IR slopes are off by about 3.5 times): calibrated from the PRT, blackbody and space counts following KLM Guide 7.1.2.4.
+  - Station products (both KLM and POD formats; the Chiba NOAA-12 1b coefficients are 0.3\~0.7 K below the PRTs), IR coefficients that are
+    constant over the pass (Chiba NOAA-17), and KLM satellites stored in the POD format (the Chiba NOAA-18 IR slopes are off by about
+    3.5 times): calibrated from the PRT, blackbody and space counts following KLM Guide 7.1.2.4.
     Verified on CLASS NOAA-15/18/19: within ±0.05 K of the operational coefficients.
     One scan line in five carries the PRT reference reading; the guide says 0, but in practice it is often 1\~5 (never 0 on POD
     satellites), so a line whose three readings have a median < 20 is taken as the reference. Station data often have bit errors in
@@ -242,6 +243,8 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     smoothed before averaging (the blackbody temperature of the Chiba NOAA-17 / 18 files used to jump by several K; it is now smooth).
 * Navigation: 51 tie points (LAC/HRPT pixels 25\~2025, GAC pixels 5\~405) interpolated in earth-central angle.
   Scan lines with invalid navigation, or navigation discontinuous with the neighbouring lines, are masked.
+  LAC/HRPT station products (Chiba etc.) are navigated from the TLE when one is available (as in AVHRR-L0; the navigation inside the files
+  is 4\~11 km off the coastlines); `[tle] station_l1b = false` in `Satima-PO.toml` keeps the navigation in the file.
 * Time: damaged time codes are replaced by the expected time. They are common at the start of Chiba files; CLASS files have
   occasional errors too, e.g. a day number of 19. Lines around data gaps are not flagged; scan-line numbers are unreliable at gaps
   and are not used.
@@ -296,10 +299,13 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     the data folder; the set with the epoch closest to the observation is used, with a warning beyond `[tle] max_age` days (default 5).
     There is also a warning when the three nearest sets disagree by more than 20 km (historical archives occasionally contain
     contradictory elements, e.g. two interleaved families 160 km apart for NOAA-9 in 1988 at CelesTrak).
-  - `tle/` holds the CelesTrak historical archives (TIROS-N\~NOAA-17, 1980\~2004). From 2005 on, run `python tools/fetch_spacetrack_tle.py`
-    to download from Space-Track (free account; put the account and password in `.spacetrack` in your home folder, or in the environment
-    variables `SPACETRACK_IDENTITY` / `SPACETRACK_PASSWORD`). The files go to `tle/spacetrack/` (kept out of version control per the
-    Space-Track terms of use). NOAA-12/14/15/16/17/18/19 take about 85 queries, 5 minutes, 11 MB.
+  - TLEs are not shipped with the program: run `python tools/fetch_spacetrack_tle.py` to download them from Space-Track (free account;
+    put the account and password in `.spacetrack` in your home folder (`identity = …` and `password = …`, or just the account and the
+    password on two lines), or in the environment variables `SPACETRACK_IDENTITY` / `SPACETRACK_PASSWORD`). The files go to
+    `tle/spacetrack/` (kept out of version control per the Space-Track terms of use). By default it downloads every year of TIROS-N\~NOAA-19
+    from launch to end of operation (about 195 queries, 10 minutes); `--from` / `--to` or satellite names restrict it, and years already
+    downloaded are skipped. For 1980\~2004 the CelesTrak historical archives also work (no account; put the zips from
+    https://celestrak.org/NORAD/archives/ in `tle/`).
 * Navigation: the same geometry as AAPP (geodetic nadir, scan plane perpendicular to the inertial velocity, 25 µs per sample, intersection
   with the WGS84 ellipsoid), computed at the 51 tie points and interpolated as in AVHRR-L1B, plus a roll, yaw and scan step per satellite
   (`avhrr_hrpt.NAV_PARAMS`).
@@ -311,7 +317,10 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
     NOAA-16 yaw −0.13° with a step of 0.05396° (AAPP: 0.053955°), the others 0.05406\~0.05409° (AAPP derives 0.0540865° from the sampling
     rate); all satellites share a roll of about −0.03°. Without them the scan edges are off by 5\~10 km. They are of the same size as the
     constant attitude corrections in NOAA 1b headers (NOAA-18 roll 0.15°, NOAA-19 yaw 0.25°) and AAPP's default biases. NOAA-14 has only two
-    damaged descending passes (roll −0.076°, yaw −0.056°); satellites without a fit use AAPP's step and a roll of −0.03°.
+    damaged descending passes (roll −0.076°, yaw −0.056°). NOAA-12 is fitted on two Chiba descending passes of 1997/12/17: roll +0.295°,
+    yaw +0.12° (AAPP lists roll −4.9 mrad with the opposite sign), residual from 5.8 km down to 0.6 km; a constant along-track offset of about
+    −3\~−3.8 km remains (both passes are descending, so a clock error cannot be told from a north-south offset).
+    Satellites without a fit use AAPP's step and a roll of −0.03°.
   - Nadir: the KLM Guide and AAPP both use the ellipsoid normal (geodetic nadir). Against the coastlines the north-south error is about −1 km
     with the geodetic nadir and −3.5 km with the geocentric one (it changes sign between ascending and descending passes, so it is separable
     from clock errors). NOAA's operational navigation from 2013 on also matches the geodetic nadir, while the 1998 CLASS 1b is closer to
@@ -320,9 +329,9 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   - No clock correction: the raw time codes lack NOAA's clock correction, leaving a constant along-track offset. Against the CLASS GAC of
     2013/11/07, NOAA-18 runs 0.225 s fast, about 1.5 km along track (the 2013/08/11 coastlines show about −1.8 km); NOAA-19 0.05 s,
     NOAA-15 0.003 s.
-  - Against the Chiba L1B of the same pass (Space-Track TLEs): NOAA-12 (1997; no fit, default parameters) differs by 1.2 km at nadir and
-    about 6.5 km at both scan edges; NOAA-19 (2014) by 1.2 km at nadir and 7.7 / 11.5 km at the edges. How Chiba navigates its L1B is not
-    known, and which one is closer has not been checked against coastlines yet.
+  - The navigation inside the Chiba L1B files (same passes) against the coastlines: NOAA-12 off by 4.5\~6 km across track, NOAA-19 by
+    8\~11 km at the scan edges (no yaw correction); the TLE navigation (with the parameters above) is within 0.2 km across track. AVHRR-L1B
+    therefore also navigates station 1b files from the TLE by default (`[tle] station_l1b`).
 * Time: damaged time codes are repaired as in AVHRR-L1B. These frames are treated as missing: fewer than 4 matching sync words, flagged as
   test signal in the KLM ID word, or a repeat of the previous frame (same time code and minor frame number; as in AAPP).
   Reception gaps (e.g. about 90 frames missing between 00:59:59 and 01:00:14 in the 2003/02/04 NOAA-17 pass) show up as a band without data.
@@ -334,10 +343,10 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   - End to end: the 2013/11/07 raw frames averaged to GAC pixels (GAC pixel n = LAC samples 5n\~5n+3; counts differ by 0.25) compared with
     the operational calibration of the CLASS GAC: CH4 median difference −0.020 K for NOAA-18, −0.033 K for NOAA-19, −0.022 K for NOAA-15
     (5th\~95th percentile about ±0.15 K).
-  - The Chiba L0 and L1B of the same pass have 100% identical counts. For NOAA-19 the IR is identical to the L1B (both calibrated from the
-    PRTs). The NOAA-12 PRT coefficients (pygac) have not been verified: the blackbody temperature they give (about 291.0 K) is 0.3\~0.7 K
-    above the one implied by the Chiba 1b coefficients, and the brightness temperatures are higher by about as much (Paka's eye 23.5°C,
-    21.9°C from the L1B).
+  - The Chiba L0 and L1B of the same pass have 100% identical counts. The NOAA-12 PRT coefficients are the same as in AAPP's avhcal.txt
+    (and the same set verified on CLASS for NOAA-11/14); the blackbody temperature implied by the Chiba 1b coefficients is 0.3\~0.7 K
+    lower (the brightness temperatures likewise, e.g. Paka's eye 21.9°C against 23.5°C from the PRTs), so AVHRR-L1B now calibrates POD
+    station products from the PRTs as well. The L0 and L1B now agree exactly in navigation, IR and visible.
   - Visible: NOAA-16\~19 use the NOAA STAR in-orbit coefficients (F. Wu's vicarious calibration over the Libyan desert, one set per month;
     the files shipped with AAPP, in `conversion_table/AVHRR/`), taking the set whose Center date is closest to the observation. Coverage:
     NOAA-16 2003/05\~2014, NOAA-17 2004/02\~2010, NOAA-18 2005/10\~2017, NOAA-19 2009\~2017. More than 120 days before the first set,

@@ -40,9 +40,10 @@ merge_gap = 600.0        # 兩個檔的間隔在幾秒內視為同一段 (同一
 [tle]
 # AVHRR-L0 (HRPT 原始框) 沒有軌道資料，以 TLE 推算衛星位置 (SGP4)：讀 dir 中的所有 TLE 檔 (含子資料夾、.zip)，
 # 以及資料目錄中的 .tle / .txt；取 epoch 最接近觀測時間的一組。
-# 1980~2004 年：CelesTrak 歷史檔 (tle/ 已附 TIROS-N~NOAA-17)；2005 年以後：Space-Track (gp_history) 或 CelesTrak 申請表
+# TLE 不隨程式附：python tools/fetch_spacetrack_tle.py 從 Space-Track 下載 (免費帳號)；1980~2004 年也可用 CelesTrak 歷史檔
 dir = "tle"              # 相對路徑以 Satima.py 所在目錄為準
 max_age = 5.0            # TLE 與觀測相差超過幾天時警告 (推算誤差約每天 1 km 以上)
+station_l1b = true       # 接收站 (千葉等) 的 AVHRR 1b 也以 TLE 重新定位 (檔內的定位常差數公里)；false = 用檔內的定位
 
 [eyetemp]
 # 紅外線頻道：印出中心點半徑 radius_deg (度) 內的最高亮溫

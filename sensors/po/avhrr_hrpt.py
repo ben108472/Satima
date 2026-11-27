@@ -37,6 +37,7 @@ import zlib
 import numpy as np
 
 import avhrr_l1b_noaa as fmt
+from satima.core.i18n import tr
 
 FRAME_WORDS = 11090
 FRAME_BYTES = 2 * FRAME_WORDS
@@ -53,6 +54,7 @@ STEP_DEG = 0.0540865            # 步進角 (度)：鏡面每秒 6 轉、每秒 
 # (第 2048 像元那側)、yaw > 0 見 geolocate。與 NOAA 1b 表頭的固定姿態修正、AAPP satid.txt 的預設偏差同量級
 # (NOAA-18 roll 0.12~0.15°、NOAA-19 yaw 0.25°、NOAA-16 步進角 0.053955°)。pitch 與時鐘誤差分不開，設為 0。
 NAV_PARAMS = {
+    'NOAA-12': (0.295, 0., 0.124, 0.054107),          # 千葉 1997-12-17 的 2 次降軌 (AAPP：roll −4.9 mrad，符號相反)
     'NOAA-14': (-0.076, 0., -0.056, 0.0540865),       # 2003 年的資料受損，只有 2 次降軌 16 個區塊；步進角未擬合
     'NOAA-15': (-0.054, 0., 0.180, 0.054092),
     'NOAA-16': (-0.034, 0., -0.130, 0.053960),
@@ -570,6 +572,61 @@ def _plausible(line2):
         return 95. <= float(line2[8:16]) <= 105. and 12. <= float(line2[52:63]) <= 15.5
     except ValueError:
         return False
+
+
+TLE_EXT = {'.tle', '.txt', '.2le', '.3le'}     # 資料目錄中當作 TLE 讀的副檔名 ([tle] dir 則讀所有檔)
+TLE_SPREAD_KM = 20.                             # 最接近的幾組 TLE 推算的位置相差超過此值時警告
+
+
+def tle_table(cfg):
+    """[tle] dir (遞迴，相對路徑以 Satima.py 所在目錄為準) 與目前目錄 (資料目錄；只讀 TLE_EXT 的檔) 中的 TLE。"""
+    folder = str(cfg.tle.dir or '').strip()
+    if folder and not os.path.isabs(folder):
+        folder = os.path.join(cfg.get('_home', '') or '', folder)
+    tables = [load_tles([folder])] if folder else []
+    here = os.getcwd()
+    try:
+        names = [n for n in os.listdir(here) if os.path.splitext(n)[1].lower() in TLE_EXT]
+    except OSError:
+        names = []
+    if names:
+        tables.append(load_tle_files([os.path.join(here, n) for n in names]))
+    out = {}
+    for t in tables:
+        for num, items in t.items():
+            out.setdefault(num, []).extend(items)
+    return {num: sorted(set(items)) for num, items in out.items()}
+
+
+def navigate(cfg, satellite, when, times, cols, label):
+    """以 TLE 定位：取 epoch 最接近 when 的 TLE (印出 epoch；超過 [tle] max_age 天、或最接近的幾組互相矛盾時警告)，
+    套用衛星的定位參數 (NAV_PARAMS) 計算 cols 的經緯度 (列, 像元)。沒有該衛星的 TLE 時 ValueError。"""
+    near = nearest_tles(tle_table(cfg), satellite, when)
+    if not near:
+        raise ValueError(tr('%s：找不到 %s (NORAD %d) 的 TLE，無法定位。請把 TLE 檔放到 %s 或資料目錄 '
+                            '(python tools/fetch_spacetrack_tle.py 可從 Space-Track 下載)',
+                            '%s: no TLE for %s (NORAD %d); cannot navigate. Put TLE files in %s or the data folder '
+                            '(python tools/fetch_spacetrack_tle.py downloads them from Space-Track)')
+                         % (label, satellite, NORAD[satellite], cfg.tle.dir))
+    epoch, line1, line2 = near[0]
+    age = (when - epoch).total_seconds() / 86400.
+    if age >= 0:
+        msg = tr('%s：TLE epoch %s (觀測前 %.1f 天)', '%s: TLE epoch %s (%.1f days before the observation)')
+    else:
+        msg = tr('%s：TLE epoch %s (觀測後 %.1f 天)', '%s: TLE epoch %s (%.1f days after the observation)')
+    print(msg % (label, epoch.strftime('%Y-%m-%d %H:%M'), abs(age)))
+    if abs(age) > float(cfg.tle.max_age):
+        print(tr('注意：TLE 與觀測相差 %.1f 天 (超過 [tle] max_age = %g)，定位誤差可能達數公里以上',
+                 'NOTE: the TLE is %.1f days from the observation (over [tle] max_age = %g); navigation errors may '
+                 'reach several km or more') % (abs(age), float(cfg.tle.max_age)))
+    spread = tle_spread(near, when)
+    if spread > TLE_SPREAD_KM:
+        print(tr('注意：最接近的 %d 組 TLE (epoch %s) 推算的衛星位置相差達 %.0f km，TLE 檔中可能有錯誤的根數，定位可能不準',
+                 'NOTE: the %d nearest TLEs (epochs %s) disagree by up to %.0f km in satellite position; the TLE files '
+                 'may contain bad elements and the navigation may be off')
+              % (len(near), ', '.join(e.strftime('%m-%d %H:%M') for e, _, _ in near), spread))
+    roll, pitch, yaw, step = NAV_PARAMS.get(satellite, NAV_DEFAULT)
+    return geolocate(line1, line2, times, cols, attitude=(roll, pitch, yaw), step_deg=step)
 
 
 def pick_tle(tles, satellite, when):
