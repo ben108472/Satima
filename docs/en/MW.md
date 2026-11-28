@@ -17,7 +17,8 @@ Supported data:
 | L1C | NASA PPS | All radiometers of the GPM constellation: GMI, AMSR2, AMSR3, SSMIS, WSF-M MWI, MHS, ATMS… (one and the same format) |
 | L1B | JAXA G-Portal | AMSR2 (GCOM-W1), AMSR3 (GOSAT-GW), GMI (GPM) |
 | L1B | NOAA CLASS | SSMIS SDR / TDR (F16\~F19), SSM/I SDR / TDR (F10\~F15) |
-| L1 | NSMC | MWRI (FY-3B/C/D) |
+| L1 | NSMC | MWRI (FY-3A\~D), MWRI-II (FY-3F/H), MWRI-RM (FY-3G) |
+| L1c | NSMC | MWRI orbital L1c (FY-3D data-assimilation product, binary) |
 
 ## Running
 
@@ -81,7 +82,7 @@ satima/mw/          MW code
   grid.py             output grid
 sensors/mw/         readers (only files with '-' in the name are loaded)
   PPS-L1C.py  GMI-L1B.py  TMI-L1B.py  pps_common.py
-  AMSR2-L1B.py  AMSR3-L1B.py  AMSRE-L1B.py  amsr_common.py  MWRI-L1.py
+  AMSR2-L1B.py  AMSR3-L1B.py  AMSRE-L1B.py  amsr_common.py  MWRI-L1.py  MWRI-L1C.py
   SSMIS-SDR.py  SSMIS-TDR.py  SSMI-SDR.py  ATMS-SDR.py  AMSUA-L1B.py
 colormap/           colormaps (.cmap, unit K; the three families share the same folder)
 data/  plot/        default data and output directories
@@ -295,7 +296,8 @@ At a gap the spacing between adjacent scans exceeds the normal value, so it is l
 | `AMSR2-L1B` | `GW1AM2_*_L1SGBTBR_*.h5` | 6.925\~89 GHz. The file only has the latitude / longitude of 89A / 89B; those of each low-frequency band are derived from 89A with the co-registration parameters A1, A2 in the file header (the formula is in the reader's notes) |
 | `AMSRE-L1B` | `PM1AME_*_L1SGBTBR_*.h5` | L1B of Aqua AMSR-E, the version reprocessed by JAXA into the **AMSR2 format** (G-Portal). The structure and the derivation of the low-frequency latitude / longitude are the same as for AMSR2; there is no 7.3 GHz; the A scan of 89 GHz failed from 2004/11, and only the B scan is used automatically. The old HDF4 format is not supported |
 | `AMSR3-L1B` | `GGWAM3_*1BTBB*.nc` | 6.925\~183 GHz (adds 10.25, 165.5, 183.31±3 / ±7 GHz); each band carries its own latitude / longitude |
-| `MWRI-L1` | `FY3?_MWRI?_GBAL_L1_*_010KM_MS.HDF` | 10.65\~89 GHz V/H, 10 channels in total, one set of latitude / longitude. FY-3F MWRI-II and FY-3G MWRI-RM have different formats and are not yet supported |
+| `MWRI-L1` | `FY3?_MWRI?_*_L1_*.HDF` | FY-3A\~D MWRI: 10.65\~89 GHz V/H, 10 channels, one set of latitude / longitude. FY-3F/H MWRI-II: also 50.3\~53.75 GHz V/H and four 118.75 GHz channels (22 in total); FY-3G MWRI-RM: plus 165.5 and 183.31 GHz (26 in total); window and sounding channels each have their own latitude / longitude (see "Fengyun-3 MWRI" below) |
+| `MWRI-L1C` | `FY3?_MWRI?_ORBT_L2_MIP_*.L1c` | FY-3D MWRI orbital L1c (NSMC data-assimilation product): binary, one 152-byte record per sample, 266 samples per scan; same 10 channels as MWRI-L1 |
 | `SSMIS-SDR` | `NPR.SDRN.S[A-D].*` | Big-endian binary. Imager scenes (91, 150, 183 GHz, 180 points), environmental scenes (19, 22, 37 GHz, 90 points), LAS (50\~60 GHz sounding, 60 points, one scan in every 3) |
 | `SSMI-SDR` | `NPR.SDRR.S[4-9].*`, `NPR.TDRR.S[4-9].*` | SDR brightness temperature and TDR antenna temperature use the same reader. 19 / 22 / 37 GHz 64 points; the A and B scans of 85 GHz are interleaved into 128 points |
 | `SSMIS-TDR` | `NPR.TDRN.S[A-D].*` | Antenna temperature. Channels and scan structure as in SDR, but 19 / 22 GHz and 37 GHz each have their own latitude / longitude (SDR shares the 37 GHz position) |
@@ -304,6 +306,26 @@ At a gap the spacing between adjacent scans exceeds the normal value, so it is l
 
 Details of the file structure of each format are written in the notes at the top of each reader. TDR is antenna temperature (no antenna pattern correction; it differs from brightness temperature by a few K),
 and such channels are marked `TA` in the menu; PCT and RGB can still be made, but the values are slightly off.
+
+### Fengyun-3 MWRI
+
+Formats follow the MWRI "L1 data instruction" documents of each satellite on the NSMC document page
+(<https://satellite.nsmc.org.cn/DataPortal/cn/support/document.html>), the FY-3A/B L1 Product Format and the FY-3D MWRI orbital L1C format document.
+
+| Satellite | Instrument | Brightness temperature | Lat / lon | Time |
+|---|---|---|---|---|
+| FY-3A/B | MWRI | top-level `EARTH_OBSERVE_BT_10_to_89GHz` (10, scans, samples) | top level | `Scan_Time_and_Period` columns 1, 2 (days, ms) |
+| FY-3C | MWRI | `Data/EARTH_OBSERVE_BT_10_to_89GHz` | `Geolocation/` | `Data/Scan_daycnt`, `Scan_mscnt` (lower case) |
+| FY-3D | MWRI | `Calibration/EARTH_OBSERVE_BT_10_to_89GHz` | `Geolocation/` | `Calibration/Scan_Daycnt`, `Scan_Mscnt` |
+| FY-3F/H | MWRI-II | `Calibration/EARTH_OBSERVE_BT` in `Window Channel/` and `Sounding Channel/` (scans, 520, channels) | `Geolocation/` of each group | `Scan_Daycnt`, `Scan_Mscnt` (x 0.1 ms) of each group |
+| FY-3G | MWRI-RM | `S1/Data/EARTH_OBSERVE_BT_10_to_89GHz`, `S2/Data/EARTH_OBSERVE_BT_50_to_183GHz` (scans, 492, channels) | `S1/`, `S2/Geolocation/` | `Scan_Daycnt`, `Scan_Mscnt` (x 0.1 ms) of each group |
+
+* Time is always days since 2000-01-01 12:00 UTC plus milliseconds since 12:00 of that day; checked against the observation start / end times in the file headers of the samples.
+* Brightness temperature = value x 0.01 + 327.68 K (from the Slope / Intercept of the data set). The V / H order of each group was confirmed with sea-surface medians of the samples (V is higher in every pair).
+* Sounding channels (50\~183 GHz) only have single-channel brightness temperature (no PCT / RGB); 50\~54 GHz use the "other" colormap group, 165.5 / 183.31 GHz the 150 GHz colormaps.
+* The previous `MWRI-L1` only knew FY-3D's `Scan_Daycnt`, so FY-3B (`Scan_Time_and_Period`) and FY-3C (`Scan_daycnt`) files raised `KeyError`; this is fixed.
+* **Verification** (2026/11): samples of FY-3B, FY-3C, FY-3D L1c, FY-3F, FY-3G and FY-3H were all drawn; the eye of Typhoon Goni in the FY-3D L1c is at the same place as in MERSI-II at the same time.
+  **FY-3A has no samples** (240 samples per scan, written from the format document). FY-3D GBAL HDF files are read as before (verified earlier).
 
 ### ATMS geolocation files
 

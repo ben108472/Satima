@@ -144,6 +144,10 @@ class SatReader:
     def source_label(self, segment):
         return segment.extra.get('source') or self.SOURCE
 
+    def sensor_label(self, segment):
+        """列表、圖說與檔名的儀器名稱；一支讀取器讀多種儀器時 (例如 MERSI-II / MERSI-LL) 由 Segment.extra['sensor'] 決定。"""
+        return segment.extra.get('sensor') or self.SENSOR
+
     # ---- 互動選單 ----------------------------------------------------------
     def select_band(self):
         pass

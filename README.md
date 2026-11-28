@@ -6,8 +6,8 @@ Satima-GEO (靜止衛星)、Satima-MW (微波)、Satima-PO (極軌成像儀) 的
 | 類別 | 資料 | 讀取器 | 詳細說明 |
 |---|---|---|---|
 | **GEO** 靜止衛星 | Himawari、GOES、GK-2A、MTG、MTSAT、COMS、GMS、Meteosat… | `sensors/geo/` (18 種格式) | [docs/GEO.md](docs/GEO.md) |
-| **MW** 微波輻射計 | AMSR2/3、GMI、SSMIS、SSM/I、ATMS、AMSU-A、MWRI、NASA PPS L1C… | `sensors/mw/` (12 種格式) | [docs/MW.md](docs/MW.md) |
-| **PO** 極軌成像儀 | VIIRS、MODIS、AVHRR、METimage、OLCI、SLSTR、SGLI、FY-1 MVISR | `sensors/po/` (10 種格式) | [docs/PO.md](docs/PO.md) |
+| **MW** 微波輻射計 | AMSR2/3、GMI、SSMIS、SSM/I、ATMS、AMSU-A、MWRI (FY-3A\~H)、NASA PPS L1C… | `sensors/mw/` (13 種格式) | [docs/MW.md](docs/MW.md) |
+| **PO** 極軌成像儀 | VIIRS、MODIS、AVHRR、METimage、OLCI、SLSTR、SGLI、FY-1 MVISR、FY-3 MERSI / VIRR | `sensors/po/` (12 種格式) | [docs/PO.md](docs/PO.md) |
 
 ## 執行
 
@@ -140,6 +140,12 @@ SSMIS 整圈。程式把「相鄰」和「同一段」分成兩件事 (`satima/c
 > DNB (ERF)、M5、TrueColor-M、TrueColor-I 的中心時間與颱風眼溫度和原本的 Satima-PO 數值相同，圖目視一致；片段自動接續、只讀相交的片段、
 > 一次選兩顆衛星各一段、缺定位檔時的提示、DNB 的 `Latitude_TC` 都以真實檔案跑過。合併檔以真實資料組出來的檔
 > (`tests/pack_viirs.py`) 測試，輸出與分開的檔逐像素相同。
+>
+> **風雲三號已用真實檔案驗證的部分** (2026/11)：MERSI-II (FY-3D)、MERSI-LL (FY-3E)、MERSI-III (FY-3F、FY-3H)、MERSI-RM (FY-3G) 的
+> 單頻道與真實色、MERSI-LL 微光；MWRI (FY-3B、FY-3C)、MWRI-II (FY-3F、FY-3H)、MWRI-RM (FY-3G)、FY-3D MWRI 軌道 L1c。
+> 反射率與 satpy 逐像素相同；亮溫照 NSMC 文件用等效中心波數與 Tbb = A Te + B，與 satpy (用標稱波長) 差 0.1\~1.4 K。
+> FY-3A/B/C 的 MERSI-1、VIRR 沒有樣本，照格式說明寫，只以 FY-3D 資料組出的合成檔 (`tests/fake_fy3.py`) 確認流程走得通；
+> FY-3A MWRI 也沒有樣本。
 >
 > **尚未以真實檔案驗證的部分**：CLASS 下載的原始合併檔與聚合檔、VIIRS 的 `GMODO` / `GIMGO`、M 頻道的亮溫 (M12\~M16)、
 > ATMS 的合併檔與舊格式定位檔 (其中 VIIRS 的幾項只用合成的測試檔 `tests/fake_viirs.py` 確認流程走得通)；

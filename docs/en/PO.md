@@ -98,11 +98,13 @@ Every sample of the swath carries its own latitude / longitude. The two image mo
 | MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10: CH3–CH5 brightness temperature, the others reflectance; true color (RGB / CORR / WV) |
 | AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B switched by scan line) |
 | AVHRR-L1B | TIROS-N~NOAA-19, MetOp AVHRR/1, /2, /3 | NOAA Level 1b (POD / KLM): CLASS `NSS.GHRR/LHRR/HRPT/FRAC.*`, Chiba University HRPT (including `.l1b.bz2`), also `.gz` / `.bz2` / `.xz`; **detected by content, not by file name** | CH1–CH5 (CH3A / CH3B switched by scan line on AVHRR/3; no CH5 on AVHRR/1) |
+| MERSI-HDF5 | FY-3A/B/C MERSI-1, FY-3D MERSI-II, FY-3E MERSI-LL, FY-3F/H MERSI-III, FY-3G MERSI-RM | `FY3?_MERSI_*_L1_*_{1000M,0250M,0500M}_*.HDF` + GEO1K / GEOQK / GEOHK (NSMC) | single channels (250 m / 500 m / 1 km), low-light LL (3 scalings), true color (General / CIRA / Worldview) |
+| VIRR-HDF5 | FY-3A/B/C VIRR | `FY3?_VIRRX_GBAL_L1_*_1000M_MS.HDF` (+ GEOXX for FY-3C) | CH1–CH10: CH3–CH5 brightness temperature, the rest reflectance; true color (General / CIRA / Worldview) |
 | AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1, /2, /3 | HRPT raw frames (Level 0) recorded by a receiving station: `.raw`, `.raw.xz` etc., Chiba University `.l0.bz2` / `.gi.bz2`, also inside a `.tar`; **detected by content**; navigation needs TLEs | as AVHRR-L1B |
 
 VN07 / VN10 of SGLI are high-gain (ocean color) channels that saturate over cloud at a reflectance of about 0.16 / 0.13, and VN08 saturates at about 0.49; to plot clouds use VN11 (868.5 nm).
 
-Start and end times of each format: for VIIRS, METimage, AVHRR-NAT, OLCI and SLSTR they are taken from the file name; MODIS file names only have the start time, so the nominal 5 minutes is assumed;
+Start and end times of each format: for VIIRS, METimage, AVHRR-NAT, OLCI and SLSTR they are taken from the file name; MODIS, MERSI and VIRR file names only have the start time, so the nominal 5 minutes is assumed;
 AVHRR-NC and SGLI file names have no end time, so the listing shows only the start time (files within 10 minutes of each other are still joined into one segment). AVHRR-NAT and AVHRR-NC read only one file at a time.
 For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the header of the file (to the millisecond). For AVHRR-L0 they come from the time codes and the number of frames.
 
@@ -125,6 +127,57 @@ For MVISR, AVHRR-NSMC and AVHRR-L1B the start and end times are taken from the h
   Packaged files were tested with files assembled from real data (`tests/pack_viirs.py`); the output is pixel-identical to that from the separate files.
   **No real files to test yet**: original packaged and aggregated files downloaded from CLASS, `GMODO` / `GIMGO`, M-band brightness temperatures (M12\~M16), removal of duplicate files and marking of missing files
   (the latter items were only run with the synthetic files of `tests/fake_viirs.py` to confirm that the workflow runs through).
+
+### Fengyun-3 MERSI (MERSI-HDF5)
+
+* One reader for five MERSI types: FY-3A/B/C MERSI-1, FY-3D MERSI-II, FY-3E MERSI-LL, FY-3F/H MERSI-III and FY-3G MERSI-RM; the instrument column
+  of the listing shows which one. Format and calibration follow the "L1 data instruction" documents of each satellite on the NSMC document page
+  (<https://satellite.nsmc.org.cn/DataPortal/cn/support/document.html>).
+* Files: `FY3X_MERSI_{GBAL|GRAN}_L1_YYYYMMDD_HHmm_<kind>_{MS|Vn}.HDF`, 5 minutes per granule. Data `1000M` / `0250M` / `0500M` (FY-3G),
+  geolocation `GEO1K` / `GEOQK` / `GEOHK` (FY-3G) / `GEOXX` (FY-3A/B 250 m), in the same folder. Contiguous granules are joined automatically;
+  when a granule has several versions of the same kind (`V0`, `V1`) the higher version is used.
+* The menu is grouped by resolution (250m / 500m / 1km) into reflectance, brightness temperature and low light; a channel available at two
+  resolutions is listed at both. True color (channels 3, 2, 1 of MERSI-1/II/III) is offered at 250 m and 1 km. When segments of different MERSI
+  types are selected at once, later segments are matched by kind and wavelength (e.g. MERSI-II CH24 to MERSI-LL CH06).
+* Latitude / longitude: geolocation file of the same resolution → (250 m) GEO1K interpolated scan by scan → tie points in the data file (every
+  5 / 20 pixels); the last two are noted on screen. Compared on FY-3H (which has both GEOQK and GEO1K): GEO1K interpolation differs from GEOQK by
+  33 m (median); tie points differ by only 3 m over the sea but are **not terrain corrected**: 0.4 km (median) and 2.3 km (99%) above 1500 m.
+* Angles for true color and low-light scaling come from GEO1K / GEOHK (interpolated from 1 km for 250 m); without them (e.g. only 0250M +
+  GEOQK) solar angles are computed from time and lat/lon and satellite angles from the sub-satellite track (where the along-scan spacing of the
+  tie points is smallest) and the satellite height. For FY-3D 1 km true color, computed instead of GEO1K angles change the CREFL result by at
+  most 1/255.
+* Only the needed part is read: once the range is known, the tie points tell which scans and columns are inside the map (plus 0.3 degrees), and
+  only that block is read (a whole 250 m granule is 8000 x 8192).
+* Reflectance: the NSMC calibrated reflectance Ref = (k0 + k1 dn + k2 dn²) / 100 (MERSI-RM: k0 + k1 dn), i.e. π L / E0 without dividing by
+  cos(solar zenith); single channels are drawn with this value (gray 0\~1). True color multiplies by the squared Earth-Sun distance ratio,
+  applies the sun-zenith correction and then CREFL (there are no official FY-3 coefficients: O3 / H2O are borrowed from the nearest MODIS bands,
+  the Rayleigh optical depth is computed from the equivalent central wavelength).
+* Brightness temperature: radiance → inverse Planck at the equivalent central wavenumber Te → Tbb = A Te + B (the NSMC formula). The equivalent
+  central wavelength comes from the file (`Effect_Center_WaveLength`), A and B from `TBB_Trans_Coefficient(_A / _B)`; the document tables are used
+  when they are missing or implausible. satpy uses the nominal wavelength and (Te − B) / A and differs from this by 0.1\~1.4 K (FY-3D CH24:
+  1.4 K; equivalent central wavenumber 933.364 cm⁻¹ vs 925.9 cm⁻¹ for the nominal 10.8 µm). MERSI-1 channel 5 (11.25 µm) follows satpy: the Slope
+  is mistakenly 1 (should be 0.01), A, B = 1.0047, −0.8549.
+* Low light (MERSI-LL LL, 0.5\~0.9 µm, similar to the VIIRS DNB): 1. ERF Dynamic 2. ERF + saturation correction (as the VIIRS DNB; radiance in
+  W m⁻² sr⁻¹ converted to W cm⁻² sr⁻¹) 3. Linear (π L / E0, for day and twilight). The lunar phase is computed with Meeus' low-precision formula
+  (`satima/po/dnb.py`, no ephem needed), the lunar zenith angle comes from GEO1K (90 degrees when missing). FY-3E is in a dawn-dusk orbit, so
+  night granules often cross the terminator; ERF adapts pixel by pixel to the solar zenith angle.
+* MERSI-II 250 m infrared shows horizontal stripes over cold clouds; they are in the data (no destriping is done here).
+* **Verification** (2026/11): samples of FY-3D (Typhoon Goni 2020), FY-3E (Milton, Melissa, Kong-rey), FY-3F, FY-3G (Melissa) and FY-3H were all
+  drawn (250 m / 500 m / 1 km single channels, true color in three styles, low light in three scalings); coastlines match the clouds, and
+  reflectances are pixel-identical to satpy. **MERSI-1 (FY-3A/B/C) has no samples**: written from the format documents and satpy, and only run
+  with synthetic files assembled from FY-3D data (`tests/fake_fy3.py`).
+
+### Fengyun-3 VIRR (VIRR-HDF5)
+
+* The Visible and Infrared Radiometer of FY-3A/B/C: 10 channels at 1.1 km, 5 minutes per granule (1800 scans x 2048 pixels). **No samples**:
+  written from the NSMC FY-3A/B L1 Product Format and FY-3C VIRR L1 format documents and satpy `virr_l1b`, and only run with synthetic files
+  (`tests/fake_fy3.py`).
+* Files: `FY3X_VIRRX_GBAL_L1_YYYYMMDD_HHmm_1000M_MS.HDF`; FY-3C also has a `…_GEOXX_MS.HDF` geolocation file, FY-3A/B keep lat/lon, angles and
+  time in the data file.
+* Reflectance % = DN x k + b (`RefSB_Cal_Coefficients`; the FY-3B values in the files are wrong, satpy's coefficients are used). Infrared: the
+  per-scan `Emissive_Radiance_Scales` / `Offsets` give radiance, inverted with `Emissive_Centroid_Wave_Number` (spelled `Emmisive_…` on FY-3A/B);
+  `Emissive_BT_Coefficients` are applied as Tbb = A Te + B when the A / B layout can be recognized (otherwise no correction).
+* Products: single channels (CH3–CH5 brightness temperature, the rest reflectance), true color (CH1, CH9, CH7; styles as MERSI).
 
 ### FY-1C/1D MVISR
 
@@ -461,3 +514,4 @@ READER = XxxReader
 * The `band` and `colorbar` returned by `plot()` are filled into the file name and the annotation below the image.
 * Formats with one file per band (like VIIRS) must override `segments()` to organize the files into granules and override `begin()` to pick the files for the selected channels; see `sensors/po/VIIRS-HDF5.py` for how it is written.
 * Formats that can only read one file at a time set `MULTI_FILE = False`.
+* When one reader reads several instruments (like MERSI-HDF5 with MERSI-II / MERSI-LL / …), put the instrument name in `Segment.extra['sensor']` (or override `sensor_label()`); the instrument column of the listing, the annotation and `{sensor}` in file names then use it.

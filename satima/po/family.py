@@ -57,7 +57,7 @@ def collect(readers, cfg, name=None, data_dir=None, output_dir=None):
 
 def rows(found):
     """資料列表：衛星、儀器、格式、時間、資料來源、頻道 / 產品、備註 (多檔接成一筆時的檔數與缺檔數)。"""
-    return [(s.satellite, r.SENSOR, r.NAME.split('-', 1)[-1], _span(s), r.source_label(s), s.product,
+    return [(s.satellite, r.sensor_label(s), r.NAME.split('-', 1)[-1], _span(s), r.source_label(s), s.product,
              seg.note(s.slots, s.missing)) for r, s in found]
 
 
@@ -92,7 +92,7 @@ def _merge(segs, reader, cfg):
     if long_chains and mode not in (True, False):
         for c in long_chains:
             print(tr('時間相接：%s %s  %s ~ %s (%d 個檔)', 'Contiguous: %s %s  %s ~ %s (%d files)') % (
-                c[0].satellite, reader.SENSOR, c[0].time.strftime('%Y/%m/%d %H:%MZ'),
+                c[0].satellite, reader.sensor_label(c[0]), c[0].time.strftime('%Y/%m/%d %H:%MZ'),
                 max(s.end for s in c).strftime('%H:%MZ'), sum(s.slots for s in c)))
         merge_long = ui.ask_yes_no(tr('時間相接的檔案合併成一張？(y/N)：',
                                       'Merge the contiguous files into one image? (y/N): '), False)
@@ -136,7 +136,7 @@ def run(picked, cfg_all):
         if n:
             reader.begin(segment)
         if len(segs) > 1:
-            print(tr('==== %s %s %s ====', '==== %s %s %s ====') % (segment.satellite, reader.SENSOR, _span(segment)))
+            print(tr('==== %s %s %s ====', '==== %s %s %s ====') % (segment.satellite, reader.sensor_label(segment), _span(segment)))
         try:
             ready = reader.prepare()
         except (OSError, ValueError) as err:        # 缺檔 (定位檔、真實色的某個頻道)、檔案內容不符
@@ -160,7 +160,7 @@ def run(picked, cfg_all):
             if canvas.empty:
                 print(tr('%s 沒有可畫的資料，略過。', 'Nothing to plot for %s; skipped.') % (label or tr('這個產品', 'this product')))
                 continue
-            fields = dict(title=title, satellite=reader.satellite, sensor=reader.SENSOR, band=band,
+            fields = dict(title=title, satellite=reader.satellite, sensor=reader.sensor_label(segment), band=band,
                           colorbar=colorbar, product=label, time=reader.time, res=reader.res, reader=reader.NAME,
                           projection=view.tag)
             a = cfg.annotation

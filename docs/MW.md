@@ -17,7 +17,8 @@
 | L1C | NASA PPS | GPM 星座所有輻射計：GMI、AMSR2、AMSR3、SSMIS、WSF-M MWI、MHS、ATMS… (同一種格式) |
 | L1B | JAXA G-Portal | AMSR2 (GCOM-W1)、AMSR3 (GOSAT-GW)、GMI (GPM) |
 | L1B | NOAA CLASS | SSMIS SDR / TDR (F16\~F19)、SSM/I SDR / TDR (F10\~F15) |
-| L1 | NSMC | MWRI (FY-3B/C/D) |
+| L1 | NSMC | MWRI (FY-3A\~D)、MWRI-II (FY-3F/H)、MWRI-RM (FY-3G) |
+| L1c | NSMC | MWRI 軌道 L1c (FY-3D 數據同化支撐產品，二進位) |
 
 ## 執行
 
@@ -81,7 +82,7 @@ satima/mw/          MW 的程式
   grid.py             輸出格點
 sensors/mw/         讀取器 (檔名有 '-' 的才會被載入)
   PPS-L1C.py  GMI-L1B.py  TMI-L1B.py  pps_common.py
-  AMSR2-L1B.py  AMSR3-L1B.py  AMSRE-L1B.py  amsr_common.py  MWRI-L1.py
+  AMSR2-L1B.py  AMSR3-L1B.py  AMSRE-L1B.py  amsr_common.py  MWRI-L1.py  MWRI-L1C.py
   SSMIS-SDR.py  SSMIS-TDR.py  SSMI-SDR.py  ATMS-SDR.py  AMSUA-L1B.py
 colormap/           色表 (.cmap，單位 K；三類共用同一個資料夾)
 data/  plot/        預設的資料與輸出目錄
@@ -295,7 +296,8 @@ ATMS 一個檔只有 32 秒，不走這個詢問：讀取器直接把同衛星�
 | `AMSR2-L1B` | `GW1AM2_*_L1SGBTBR_*.h5` | 6.925\~89 GHz。檔案只有 89A / 89B 的經緯度，低頻各頻段的經緯度用檔頭的 co-registration 參數 A1、A2 由 89A 推算 (公式見讀取器說明) |
 | `AMSRE-L1B` | `PM1AME_*_L1SGBTBR_*.h5` | Aqua AMSR-E 的 L1B，JAXA 重新處理成 **AMSR2 格式** 的版本 (G-Portal)。結構與低頻經緯度的推算同 AMSR2；沒有 7.3 GHz；89 GHz 的 A 掃描 2004/11 起故障，自動只用 B 掃描。舊的 HDF4 格式不支援 |
 | `AMSR3-L1B` | `GGWAM3_*1BTBB*.nc` | 6.925\~183 GHz (多了 10.25、165.5、183.31±3 / ±7 GHz)；每個頻段自帶經緯度 |
-| `MWRI-L1` | `FY3?_MWRI?_GBAL_L1_*_010KM_MS.HDF` | 10.65\~89 GHz V/H 共 10 個頻道，一組經緯度。FY-3F MWRI-II、FY-3G MWRI-RM 格式不同，尚未支援 |
+| `MWRI-L1` | `FY3?_MWRI?_*_L1_*.HDF` | FY-3A\~D MWRI：10.65\~89 GHz V/H 共 10 個頻道，一組經緯度。FY-3F/H MWRI-II：另有 50.3\~53.75 GHz V/H 與 118.75 GHz 4 個頻道 (共 22 個)；FY-3G MWRI-RM：再加 165.5、183.31 GHz (共 26 個)；窗區與探測頻道各有一組經緯度 (見下方「風雲三號 MWRI」) |
+| `MWRI-L1C` | `FY3?_MWRI?_ORBT_L2_MIP_*.L1c` | FY-3D MWRI 軌道 L1c (NSMC 數據同化支撐產品)：二進位，每個觀測點一筆 152 bytes、每條掃描 266 點；10 個頻道同 MWRI-L1 |
 | `SSMIS-SDR` | `NPR.SDRN.S[A-D].*` | 大端二進位。影像場景 (91、150、183 GHz，180 點)、環境場景 (19、22、37 GHz，90 點)、LAS (50\~60 GHz 探空，60 點、每 3 條掃描一條) |
 | `SSMI-SDR` | `NPR.SDRR.S[4-9].*`、`NPR.TDRR.S[4-9].*` | SDR 亮溫與 TDR 天線溫度同一支讀取器。19 / 22 / 37 GHz 64 點；85 GHz 的 A、B 掃描交錯成 128 點 |
 | `SSMIS-TDR` | `NPR.TDRN.S[A-D].*` | 天線溫度。頻道、掃描結構同 SDR，但 19 / 22 GHz 與 37 GHz 各有一組經緯度 (SDR 共用 37 GHz 的位置) |
@@ -304,6 +306,26 @@ ATMS 一個檔只有 32 秒，不走這個詢問：讀取器直接把同衛星�
 
 各格式的檔案結構細節寫在各讀取器開頭的說明。TDR 是天線溫度 (未做天線場型修正，與亮溫差數 K)，
 選單中頻道會附註 `TA`；仍可做 PCT 與 RGB，但數值略有偏差。
+
+### 風雲三號 MWRI
+
+格式說明取自 NSMC 文件頁 (<https://satellite.nsmc.org.cn/DataPortal/cn/support/document.html>) 各衛星的 MWRI「一級產品使用說明」、
+FY-3A/B L1 Product Format 與「FY-3D MWRI 轨道 L1C 格式说明」。
+
+| 衛星 | 儀器 | 亮溫資料集 | 經緯度 | 時間 |
+|---|---|---|---|---|
+| FY-3A/B | MWRI | 最上層 `EARTH_OBSERVE_BT_10_to_89GHz` (10, 掃描, 點) | 最上層 | `Scan_Time_and_Period` 第 1、2 欄 (日數、毫秒) |
+| FY-3C | MWRI | `Data/EARTH_OBSERVE_BT_10_to_89GHz` | `Geolocation/` | `Data/Scan_daycnt`、`Scan_mscnt` (小寫) |
+| FY-3D | MWRI | `Calibration/EARTH_OBSERVE_BT_10_to_89GHz` | `Geolocation/` | `Calibration/Scan_Daycnt`、`Scan_Mscnt` |
+| FY-3F/H | MWRI-II | `Window Channel/` 與 `Sounding Channel/` 的 `Calibration/EARTH_OBSERVE_BT` (掃描, 520, 頻道) | 各組的 `Geolocation/` | 各組的 `Scan_Daycnt`、`Scan_Mscnt` (x 0.1 ms) |
+| FY-3G | MWRI-RM | `S1/Data/EARTH_OBSERVE_BT_10_to_89GHz`、`S2/Data/EARTH_OBSERVE_BT_50_to_183GHz` (掃描, 492, 頻道) | `S1/`、`S2/Geolocation/` | 各組的 `Scan_Daycnt`、`Scan_Mscnt` (x 0.1 ms) |
+
+* 時間一律是 2000-01-01 12:00 UTC 起的日數 + 當日 12:00 起的毫秒；以各樣本與檔頭的觀測起訖時間核對過。
+* 亮溫 = 值 x 0.01 + 327.68 K (取自資料集的 Slope / Intercept)。各組的 V / H 順序以樣本的海面中位數確認 (每一對都是 V 較高)。
+* 探測頻道 (50\~183 GHz) 只有單頻道亮溫 (沒有 PCT / RGB)；50\~54 GHz 用「其他」色表分組，165.5 / 183.31 GHz 用 150 GHz 的色表。
+* 舊版的 `MWRI-L1` 只認得 FY-3D 的 `Scan_Daycnt`，FY-3B (`Scan_Time_and_Period`)、FY-3C (`Scan_daycnt`) 的檔會出現 `KeyError`；這次一併修正。
+* **驗證狀況** (2026/11)：FY-3B、FY-3C、FY-3D L1c、FY-3F、FY-3G、FY-3H 的樣本都畫過；FY-3D L1c 的天鵝颱風眼與同時間 MERSI-II 的位置相同。
+  **FY-3A 沒有樣本** (每條掃描 240 點，照格式說明寫)。FY-3D 的 GBAL HDF 檔沿用原本的讀法 (之前已驗證)。
 
 ### ATMS 的定位檔
 

@@ -6,8 +6,8 @@ layered config files. 中文版: [README.md](README.md)
 | Family | Data | Readers | Details |
 |---|---|---|---|
 | **GEO** geostationary satellites | Himawari, GOES, GK-2A, MTG, MTSAT, COMS, GMS, Meteosat… | `sensors/geo/` (18 formats) | [docs/en/GEO.md](docs/en/GEO.md) |
-| **MW** microwave radiometers | AMSR2/3, GMI, SSMIS, SSM/I, ATMS, AMSU-A, MWRI, NASA PPS L1C… | `sensors/mw/` (12 formats) | [docs/en/MW.md](docs/en/MW.md) |
-| **PO** polar-orbiting imagers | VIIRS, MODIS, AVHRR, METimage, OLCI, SLSTR, SGLI, FY-1 MVISR | `sensors/po/` (10 formats) | [docs/en/PO.md](docs/en/PO.md) |
+| **MW** microwave radiometers | AMSR2/3, GMI, SSMIS, SSM/I, ATMS, AMSU-A, MWRI (FY-3A\~H), NASA PPS L1C… | `sensors/mw/` (13 formats) | [docs/en/MW.md](docs/en/MW.md) |
+| **PO** polar-orbiting imagers | VIIRS, MODIS, AVHRR, METimage, OLCI, SLSTR, SGLI, FY-1 MVISR, FY-3 MERSI / VIRR | `sensors/po/` (12 formats) | [docs/en/PO.md](docs/en/PO.md) |
 
 ## Running
 
@@ -140,6 +140,12 @@ Current coverage: ATMS (MW) and all PO readers use these rules. The other MW rea
 > DNB (ERF), M5, TrueColor-M and TrueColor-I, the center time and eye temperature are numerically the same as the original Satima-PO and the images are visually consistent; automatic joining of granules, reading only the intersecting granules,
 > selecting one segment each of two satellites at once, the notice when a geolocation file is missing, and the DNB `Latitude_TC` were all run with real files. Packaged files were tested with files assembled from real data
 > (`tests/pack_viirs.py`); the output is pixel-identical to that from the separate files.
+>
+> **Fengyun-3: verified with real files** (2026/11): single channels and true color of MERSI-II (FY-3D), MERSI-LL (FY-3E), MERSI-III (FY-3F, FY-3H)
+> and MERSI-RM (FY-3G), the MERSI-LL low-light band; MWRI (FY-3B, FY-3C), MWRI-II (FY-3F, FY-3H), MWRI-RM (FY-3G) and the FY-3D MWRI orbital L1c.
+> Reflectances are pixel-identical to satpy; brightness temperatures follow the NSMC documents (equivalent central wavenumber and Tbb = A Te + B)
+> and differ from satpy (which uses the nominal wavelength) by 0.1\~1.4 K. FY-3A/B/C MERSI-1 and VIRR have no samples: they were written from the
+> format documents and only run with synthetic files assembled from FY-3D data (`tests/fake_fy3.py`); FY-3A MWRI has no samples either.
 >
 > **Parts not yet verified with real files**: original packaged and aggregated files downloaded from CLASS, VIIRS `GMODO` / `GIMGO`, M-band brightness temperatures (M12\~M16),
 > ATMS packaged files and old-format geolocation files (the VIIRS items among these were only run with the synthetic test files of `tests/fake_viirs.py` to confirm that the workflow runs through);

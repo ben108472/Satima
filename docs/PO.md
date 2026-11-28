@@ -98,11 +98,13 @@ Projection: 1.MERC  2.CYL  3.LCC
 | MVISR-L1B | FY-1C/1D MVISR | `FY1?_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH10：CH3–CH5 亮溫，其餘反射率；真實色 (RGB / CORR / WV) |
 | AVHRR-NSMC | NOAA-15~19 AVHRR/3 | `NA??_AVHRR_HRPT_L1_*.L1B` (NSMC HRPT 1B) | CH1–CH5 (CH3A / CH3B 依掃描線切換) |
 | AVHRR-L1B | TIROS-N~NOAA-19、MetOp AVHRR/1、/2、/3 | NOAA Level 1b (POD / KLM)：CLASS 的 `NSS.GHRR/LHRR/HRPT/FRAC.*`、千葉大學 HRPT (含 `.l1b.bz2`)，也可以是 `.gz` / `.bz2` / `.xz`；**依內容辨識，不看檔名** | CH1–CH5 (AVHRR/3 的 CH3A / CH3B 依掃描線切換；AVHRR/1 沒有 CH5) |
+| MERSI-HDF5 | FY-3A/B/C MERSI-1、FY-3D MERSI-II、FY-3E MERSI-LL、FY-3F/H MERSI-III、FY-3G MERSI-RM | `FY3?_MERSI_*_L1_*_{1000M,0250M,0500M}_*.HDF` + GEO1K / GEOQK / GEOHK (NSMC) | 單頻道 (250 m / 500 m / 1 km)、微光 LL (3 種縮放)、真實色 (General / CIRA / Worldview) |
+| VIRR-HDF5 | FY-3A/B/C VIRR | `FY3?_VIRRX_GBAL_L1_*_1000M_MS.HDF` (+ FY-3C 的 GEOXX) | CH1–CH10：CH3–CH5 亮溫，其餘反射率；真實色 (General / CIRA / Worldview) |
 | AVHRR-L0 | TIROS-N~NOAA-19 AVHRR/1、/2、/3 | HRPT 原始框 (Level 0)：接收站收錄的 `.raw` / `.raw.xz` 等、千葉大學的 `.l0.bz2` / `.gi.bz2`，可直接放 `.tar`；**依內容辨識**；定位需要 TLE | 同 AVHRR-L1B |
 
 SGLI 的 VN07 / VN10 是高增益 (海色) 頻道，雲上約在反射率 0.16 / 0.13 就飽和，VN08 約 0.49 飽和；畫雲請用 VN11 (868.5 nm)。
 
-各格式的起訖時間：VIIRS、METimage、AVHRR-NAT、OLCI、SLSTR 取自檔名；MODIS 檔名只有起始時間，以標稱的 5 分鐘計；
+各格式的起訖時間：VIIRS、METimage、AVHRR-NAT、OLCI、SLSTR 取自檔名；MODIS、MERSI、VIRR 檔名只有起始時間，以標稱的 5 分鐘計；
 AVHRR-NC、SGLI 的檔名沒有結束時間，列表只顯示起始時間 (間隔 10 分鐘內的檔仍會接成一段)。AVHRR-NAT、AVHRR-NC 一次只讀一個檔。
 MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到毫秒)。AVHRR-L0 的起訖時間取自框的時間碼與框數。
 
@@ -125,6 +127,46 @@ MVISR、AVHRR-NSMC、AVHRR-L1B 的起訖時間取自檔案的表頭 (精確到�
   合併檔以真實資料組出來的檔 (`tests/pack_viirs.py`) 測試，輸出與分開的檔逐像素相同。
   **還沒有真實檔案可測**：CLASS 下載的原始合併檔與聚合檔、`GMODO` / `GIMGO`、M 頻道亮溫 (M12\~M16)、重複檔去除與缺檔標示
   (後幾項只用 `tests/fake_viirs.py` 的合成檔確認流程走得通)。
+
+### 風雲三號 MERSI (MERSI-HDF5)
+
+* 一支讀取器讀五種 MERSI：FY-3A/B/C MERSI-1、FY-3D MERSI-II、FY-3E MERSI-LL、FY-3F/H MERSI-III、FY-3G MERSI-RM，列表的儀器欄依衛星標出。
+  格式與定標取自 NSMC 文件頁 (<https://satellite.nsmc.org.cn/DataPortal/cn/support/document.html>) 各衛星的「一級產品使用說明」。
+* 檔案：`FY3X_MERSI_{GBAL|GRAN}_L1_YYYYMMDD_HHmm_<種類>_{MS|Vn}.HDF`，一個片段 5 分鐘。資料 `1000M` / `0250M` / `0500M` (FY-3G)，
+  定位 `GEO1K` / `GEOQK` / `GEOHK` (FY-3G) / `GEOXX` (FY-3A/B 250 m)，放在同一個資料夾。時間相接的片段自動接成一筆；
+  同一片段同一種檔有多個版本 (`V0`、`V1`) 時用版本號大的。
+* 選單依解析度 (250m / 500m / 1km) 分成反射率、亮溫、微光；同一頻道兩種解析度都有時兩種都列。真實色 (MERSI-1/II/III 的 3、2、1 頻道)
+  有 250 m 與 1 km 兩種。一次選到不同 MERSI 的資料時，第 2 段起依種類與波長對應 (例如 MERSI-II 的 CH24 對 MERSI-LL 的 CH06)。
+* 經緯度：同解析度的定位檔 → (250 m) GEO1K 逐掃描帶內插 → 資料檔內的 tie point (每 5 / 20 點一個)，用到後兩者時畫面會註明。
+  以 FY-3H (同時有 GEOQK 與 GEO1K) 比較：GEO1K 內插與 GEOQK 差 33 m (中位數)；tie point 在海面只差 3 m，但**沒有做地形校正**，
+  高度 1500 m 以上的山區差 0.4 km (中位數)、2.3 km (99%)。
+* 真實色與微光縮放需要的角度取自 GEO1K / GEOHK (250 m 由 1 km 內插)；沒有時 (例如只有 0250M + GEOQK) 太陽角由時間與經緯度計算，
+  衛星角由星下點 (tie point 沿掃描方向間距最小處) 與衛星高度推算。FY-3D 1 km 真實色以計算的角度代替 GEO1K 的角度，CREFL 後最多差 1/255。
+* 只讀需要的部分：範圍確定後先以 tie point 找出地圖內的掃描帶與行 (範圍外加 0.3 度)，只讀那一塊 (250 m 的整個片段是 8000 x 8192)。
+* 反射率：NSMC 的定標反射率 Ref = (k0 + k1 dn + k2 dn²) / 100 (MERSI-RM：k0 + k1 dn)，等於 π L / E0，未除 cos 太陽天頂角；
+  單頻道照這個值畫 (灰階 0\~1)。真實色先乘日地距離比平方並做太陽天頂角校正，再做 CREFL (沒有 FY-3 的官方係數：O3 / H2O 借用 MODIS
+  相近波段，Rayleigh 光學厚度由等效中心波長計算)。
+* 亮溫：輻亮度 → 等效中心波數的 Planck 反演 Te → Tbb = A Te + B (NSMC 文件的公式)。等效中心波長取自檔案 (`Effect_Center_WaveLength`)，
+  A、B 取自 `TBB_Trans_Coefficient(_A / _B)`，缺少或不合理時用文件的表格。satpy 用標稱波長與 (Te − B) / A，與這裡差 0.1\~1.4 K
+  (FY-3D CH24 差 1.4 K：等效中心波數 933.364 cm⁻¹，標稱 10.8 µm 為 925.9 cm⁻¹)。MERSI-1 的第 5 頻道 (11.25 µm) 照 satpy：
+  Slope 誤植為 1 (應為 0.01)，A、B = 1.0047、−0.8549。
+* 微光 (MERSI-LL 的 LL，0.5\~0.9 µm，與 VIIRS DNB 相近)：1.ERF Dynamic 2.ERF + 飽和修正 (同 VIIRS DNB；輻亮度 W m⁻² sr⁻¹ 換成
+  W cm⁻² sr⁻¹) 3.Linear (π L / E0，白天與晨昏用)。月相以 Meeus 的低精度公式計算 (`satima/po/dnb.py`，不需要 ephem)，
+  月亮天頂角取自 GEO1K (沒有時以 90 度計算)。FY-3E 是晨昏軌道，夜間的片段常常跨過晨昏線，ERF 會依太陽天頂角逐點調整。
+* MERSI-II 的 250 m 紅外在冷雲區有橫向條紋，是資料本身的條紋 (這裡沒有做去條紋處理)。
+* **驗證狀況** (2026/11)：FY-3D (2020 天鵝颱風)、FY-3E (Milton、Melissa、康芮)、FY-3F、FY-3G (Melissa)、FY-3H 的樣本都畫過
+  (250 m / 500 m / 1 km 單頻道、真實色三種樣式、微光三種縮放)，海岸線與雲系吻合；反射率與 satpy 逐像素相同。
+  **MERSI-1 (FY-3A/B/C) 沒有樣本**：照格式說明與 satpy 寫，只以 FY-3D 資料組出的合成檔 (`tests/fake_fy3.py`) 確認流程走得通。
+
+### 風雲三號 VIRR (VIRR-HDF5)
+
+* FY-3A/B/C 的可見光紅外掃描輻射計，10 個頻道、1.1 km，一個片段 5 分鐘 (1800 條掃描 x 2048 點)。**沒有樣本**：照 NSMC 的
+  FY-3A/B L1 Product Format、FY-3C 扫描辐射计 L1 数据格式说明與 satpy `virr_l1b` 寫，只以合成檔 (`tests/fake_fy3.py`) 確認流程走得通。
+* 檔案：`FY3X_VIRRX_GBAL_L1_YYYYMMDD_HHmm_1000M_MS.HDF`；FY-3C 另有 `…_GEOXX_MS.HDF` 定位檔，FY-3A/B 的經緯度、角度、時間在資料檔內。
+* 反射率 % = DN x k + b (`RefSB_Cal_Coefficients`；FY-3B 檔內的係數有誤，用 satpy 的係數)。紅外：逐掃描線的 `Emissive_Radiance_Scales` /
+  `Offsets` 換成輻亮度，再以 `Emissive_Centroid_Wave_Number` (FY-3A/B 拼成 `Emmisive_…`) 做 Planck 反演；`Emissive_BT_Coefficients`
+  能判斷出 A、B 的排列時以 Tbb = A Te + B 修正 (排列看不出來就不修正)。
+* 產品：單頻道 (CH3–CH5 亮溫，其餘反射率)、真實色 (CH1、CH9、CH7；樣式同 MERSI)。
 
 ### FY-1C/1D MVISR
 
@@ -421,3 +463,4 @@ READER = XxxReader
 * `plot()` 回傳的 `band`、`colorbar` 會填入檔名與圖下方的標註。
 * 一個波段一個檔的格式 (像 VIIRS) 要覆寫 `segments()` 把檔案整理成片段、覆寫 `begin()` 依所選的頻道挑檔，寫法見 `sensors/po/VIIRS-HDF5.py`。
 * 只能一次讀一個檔的格式設 `MULTI_FILE = False`。
+* 一支讀取器讀多種儀器時 (像 MERSI-HDF5 的 MERSI-II / MERSI-LL / …)，在 `Segment.extra['sensor']` 放儀器名稱 (或覆寫 `sensor_label()`)，列表的儀器欄、圖說與檔名的 `{sensor}` 就會用它。
